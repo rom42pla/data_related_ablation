@@ -12,8 +12,6 @@ if __name__ == '__main__':
 
     # from arg_parsers.train import get_args
     # from plots import plot_metrics, plot_cross_subject
-    # from utils import parse_dataset_class, set_global_seed, save_to_json, init_logger, train_k_fold, merge_logs, train, \
-    # split_dataset
     from utils import set_global_seed, parse_dataset_class, get_k_fold_runs, get_loso_runs, get_simple_runs
     from datasets.base_class import EEGClassificationDataset
     # from models.sateer import SATEER
@@ -21,12 +19,6 @@ if __name__ == '__main__':
     import torchaudio
 
     # torchaudio.set_audio_backend("sox_io")
-
-    # sets up the loggers
-    # init_logger()
-
-    # retrieves line arguments
-    # args: Dict[str, Union[bool, str, int, float]] = get_args()
     with open('configs/deap.yaml', 'r') as fp:
         args = yaml.safe_load(fp)
     logger.info(f"args:\n{pformat(args)}")
