@@ -48,10 +48,61 @@ def set_global_seed(seed: int):
     torch.manual_seed(seed)
 
 
-def get_k_fold_indices(k: int, dataset: EEGClassificationDataset):
+def get_k_fold_runs(k: int, dataset: EEGClassificationDataset) -> List[List[int]]:
     assert isinstance(k, int) and k > 1
-    print(len(dataset.windows))
+    indices_shuffled = np.arange(len(dataset))
+    np.random.shuffle(indices_shuffled)
+    folds = np.array_split(indices_shuffled, indices_or_sections=k)
+    folds = [fold.tolist() for fold in folds]
+    all_indices = np.concatenate(folds)
+    assert len(all_indices) == len(np.unique(all_indices))
+    assert np.array_equal(np.sort(all_indices), np.arange(len(dataset)))
 
+    # builds the runs dict
+    runs = []
+    for i_fold in range(len(folds)):
+        runs.append({
+            "train_idx": [i for i_fold_inner, fold in enumerate(folds) for i in fold if i_fold_inner != i_fold],
+            "val_idx": [i for i_fold_inner, fold in enumerate(folds) for i in fold if i_fold_inner == i_fold],
+        })
+        assert set(runs[-1]["train_idx"]) & set(runs[-1]["val_idx"]) == set()
+    assert len(runs) == k
+    return runs
+
+
+def get_loso_runs(dataset: EEGClassificationDataset) -> List[List[int]]:
+    runs = []
+    indices_per_subject = {
+        subject_id: []
+        for subject_id in dataset.subject_ids
+    }
+    for i_window, window in enumerate(dataset.windows):
+        indices_per_subject[window["subject_id"]].append(i_window)
+    
+    # builds the runs dict
+    runs = []
+    for subject_id in indices_per_subject:
+        runs.append({
+            "train_idx": [i for subject_id_inner, indices in indices_per_subject.items() for i in indices if subject_id_inner != subject_id],
+            "val_idx": [i for subject_id_inner, indices in indices_per_subject.items() for i in indices if subject_id_inner == subject_id],
+        })
+        assert set(runs[-1]["train_idx"]) & set(runs[-1]["val_idx"]) == set()
+    assert len(runs) == len(dataset.subject_ids)
+    return runs
+
+
+def get_simple_runs(dataset: EEGClassificationDataset, train_perc = 0.8) -> List[List[int]]:
+    assert 0 < train_perc < 1
+    indices_shuffled = np.arange(len(dataset))
+    np.random.shuffle(indices_shuffled)
+    pivot = int(len(dataset) * train_perc)
+    runs = [{
+        "train_idx": indices_shuffled[:pivot],
+        "val_idx": indices_shuffled[pivot:]
+    }]
+    assert set(runs[-1]["train_idx"]) & set(runs[-1]["val_idx"]) == set()
+    return runs
+    
 # def init_logger() -> None:
 #     pd.set_option('display.max_columns', None)
 #     warnings.filterwarnings("ignore", category=LightningDeprecationWarning)

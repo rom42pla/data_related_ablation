@@ -1,7 +1,7 @@
 if __name__ == '__main__':
     import gc
     import yaml
-    import logging
+    from loguru import logger
     from datetime import datetime
     from os import makedirs
     from os.path import join
@@ -14,7 +14,7 @@ if __name__ == '__main__':
     # from plots import plot_metrics, plot_cross_subject
     # from utils import parse_dataset_class, set_global_seed, save_to_json, init_logger, train_k_fold, merge_logs, train, \
     # split_dataset
-    from utils import set_global_seed, parse_dataset_class, get_k_fold_indices
+    from utils import set_global_seed, parse_dataset_class, get_k_fold_runs, get_loso_runs, get_simple_runs
     from datasets.base_class import EEGClassificationDataset
     # from models.sateer import SATEER
 
@@ -29,7 +29,7 @@ if __name__ == '__main__':
     # args: Dict[str, Union[bool, str, int, float]] = get_args()
     with open('configs/deap.yaml', 'r') as fp:
         args = yaml.safe_load(fp)
-    print(f"line args:\n{pformat(args)}")
+    logger.info(f"args:\n{pformat(args)}")
 
     # sets the random seed
     set_global_seed(seed=args['seed'])
@@ -37,8 +37,6 @@ if __name__ == '__main__':
     # sets the logging folder
     datetime_str: str = datetime.now().strftime("%Y%m%d_%H:%M")
     experiment_name: str = f"{datetime_str}_{args['dataset']}_size={args['windows_size']}_stride={args['windows_stride']}"
-    # if args['validation'] == "simple":
-    #     experiment_name += f"_{args['model_name']}"
     experiment_path: str = join(args['checkpoints_path'], experiment_name)
     makedirs(experiment_path, exist_ok=True)
 
@@ -55,52 +53,19 @@ if __name__ == '__main__':
 
     if args['setting'] == "cross_subject":
         if args['validation'] == "k_fold":
-            # starts the kfold training
-            print(f"training on {args['dataset']} dataset "
-                  f"({len(dataset)} samples)")
-            indices = get_k_fold_indices(k=args["k"], dataset=dataset)
-            # train_k_fold(dataset=dataset,
-            #              experiment_path=experiment_path,
-            #              **args)
-            # plot_cross_subject(path=experiment_path)
+            runs = get_k_fold_runs(k=args["k"], dataset=dataset)
         elif args['validation'] == "loso":
-            raise NotImplementedError
+            runs = get_loso_runs(dataset=dataset)
         elif args['validation'] == "simple":
-            raise NotImplementedError
-            # dataset_train, dataset_val = split_dataset(dataset, train_set_perc=0.9)
-            # train(
-            #     dataset_train=dataset_train,
-            #     dataset_val=dataset_val,
-            #     experiment_path=experiment_path,
-            #     save_model=True,
-            #     **args
-            # )
-
-    # elif args['setting'] == "within_subject":
-    #     if args['validation'] == "k_fold":
-    #         for i_subject, subject_id in enumerate(dataset.subject_ids):
-    #             # frees some memory
-    #             gc.collect()
-    #             # retrieves the samples for a single subject
-    #             dataset_single_subject = Subset(dataset, [i for i, s in enumerate(dataset)
-    #                                                       if dataset.subject_ids[s["subject_id"]] == subject_id])
-    #             assert all([dataset.subject_ids[s["subject_id"]] == subject_id
-    #                         for s in dataset_single_subject])
-    #             # starts the kfold training
-    #             logging.info(f"training on {args['dataset_type']}, subject {subject_id} "
-    #                          f"({i_subject + 1}/{len(dataset.subject_ids)}, {len(dataset_single_subject)} samples)")
-    #             train_k_fold(dataset=dataset_single_subject,
-    #                          experiment_path=join(experiment_path, subject_id),
-    #                          progress_bar=False,
-    #                          **args)
-    #             # frees some memory
-    #             del dataset_single_subject
-    #             if args['benchmark']:
-    #                 break
-    #     elif args['validation'] == "loso":
-    #         raise NotImplementedError
+            runs = get_simple_runs(dataset=dataset, train_perc=args["train_perc"])
         else:
             raise NotImplementedError
+    else:
+        raise NotImplementedError
+    
+    for i_run, run in enumerate(runs):
+        logger.info(f"doing run {i_run+1} of {len(runs)} ({((i_run+1)/len(runs)) * 100:.1f}%)")
+        
     # frees some memory
     del dataset
     gc.collect()
