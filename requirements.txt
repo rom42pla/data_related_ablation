@@ -1,0 +1,17 @@
+tqdm
+numpy
+scikit-learn
+pandas
+einops
+matplotlib
+mne
+seaborn
+pyyaml
+torch
+torchvision
+torchaudio
+lightning
+
+
+
+

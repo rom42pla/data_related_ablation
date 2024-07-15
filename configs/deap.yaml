@@ -1,0 +1,11 @@
+dataset: deap
+dataset_path: ../../datasets/deap
+setting: cross_subject
+seed: 42
+windows_size: 1
+windows_stride: 1
+dont_discretize_labels: False
+dont_normalize_eegs: False
+validation: k_fold
+k: 10
+checkpoints_path: ./checkpoints

@@ -1,0 +1,106 @@
+if __name__ == '__main__':
+    import gc
+    import yaml
+    import logging
+    from datetime import datetime
+    from os import makedirs
+    from os.path import join
+    from pprint import pformat
+    from typing import Union, Dict
+
+    from torch.utils.data import Subset
+
+    # from arg_parsers.train import get_args
+    # from plots import plot_metrics, plot_cross_subject
+    # from utils import parse_dataset_class, set_global_seed, save_to_json, init_logger, train_k_fold, merge_logs, train, \
+    # split_dataset
+    from utils import set_global_seed, parse_dataset_class, get_k_fold_indices
+    from datasets.base_class import EEGClassificationDataset
+    # from models.sateer import SATEER
+
+    import torchaudio
+
+    # torchaudio.set_audio_backend("sox_io")
+
+    # sets up the loggers
+    # init_logger()
+
+    # retrieves line arguments
+    # args: Dict[str, Union[bool, str, int, float]] = get_args()
+    with open('configs/deap.yaml', 'r') as fp:
+        args = yaml.safe_load(fp)
+    print(f"line args:\n{pformat(args)}")
+
+    # sets the random seed
+    set_global_seed(seed=args['seed'])
+
+    # sets the logging folder
+    datetime_str: str = datetime.now().strftime("%Y%m%d_%H:%M")
+    experiment_name: str = f"{datetime_str}_{args['dataset']}_size={args['windows_size']}_stride={args['windows_stride']}"
+    # if args['validation'] == "simple":
+    #     experiment_name += f"_{args['model_name']}"
+    experiment_path: str = join(args['checkpoints_path'], experiment_name)
+    makedirs(experiment_path, exist_ok=True)
+
+    # sets up the dataset
+    dataset_class = parse_dataset_class(name=args["dataset"])
+    dataset: EEGClassificationDataset = dataset_class(
+        path=args['dataset_path'],
+        window_size=args['windows_size'],
+        window_stride=args['windows_stride'],
+        drop_last=True,
+        discretize_labels=not args['dont_discretize_labels'],
+        normalize_eegs=not args['dont_normalize_eegs'],
+    )
+
+    if args['setting'] == "cross_subject":
+        if args['validation'] == "k_fold":
+            # starts the kfold training
+            print(f"training on {args['dataset']} dataset "
+                  f"({len(dataset)} samples)")
+            indices = get_k_fold_indices(k=args["k"], dataset=dataset)
+            # train_k_fold(dataset=dataset,
+            #              experiment_path=experiment_path,
+            #              **args)
+            # plot_cross_subject(path=experiment_path)
+        elif args['validation'] == "loso":
+            raise NotImplementedError
+        elif args['validation'] == "simple":
+            raise NotImplementedError
+            # dataset_train, dataset_val = split_dataset(dataset, train_set_perc=0.9)
+            # train(
+            #     dataset_train=dataset_train,
+            #     dataset_val=dataset_val,
+            #     experiment_path=experiment_path,
+            #     save_model=True,
+            #     **args
+            # )
+
+    # elif args['setting'] == "within_subject":
+    #     if args['validation'] == "k_fold":
+    #         for i_subject, subject_id in enumerate(dataset.subject_ids):
+    #             # frees some memory
+    #             gc.collect()
+    #             # retrieves the samples for a single subject
+    #             dataset_single_subject = Subset(dataset, [i for i, s in enumerate(dataset)
+    #                                                       if dataset.subject_ids[s["subject_id"]] == subject_id])
+    #             assert all([dataset.subject_ids[s["subject_id"]] == subject_id
+    #                         for s in dataset_single_subject])
+    #             # starts the kfold training
+    #             logging.info(f"training on {args['dataset_type']}, subject {subject_id} "
+    #                          f"({i_subject + 1}/{len(dataset.subject_ids)}, {len(dataset_single_subject)} samples)")
+    #             train_k_fold(dataset=dataset_single_subject,
+    #                          experiment_path=join(experiment_path, subject_id),
+    #                          progress_bar=False,
+    #                          **args)
+    #             # frees some memory
+    #             del dataset_single_subject
+    #             if args['benchmark']:
+    #                 break
+    #     elif args['validation'] == "loso":
+    #         raise NotImplementedError
+        else:
+            raise NotImplementedError
+    # frees some memory
+    del dataset
+    gc.collect()
