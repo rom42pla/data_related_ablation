@@ -5,9 +5,13 @@ from typing import Dict, List, Tuple
 
 import os
 
+import mne
+from scipy.signal import welch
 import numpy as np
+import pandas as pd
 import pickle
 import einops
+import matplotlib.pyplot as plt
 
 from datasets.base_class import EEGClassificationDataset
 
@@ -17,7 +21,7 @@ class DEAPDataset(EEGClassificationDataset):
         super(DEAPDataset, self).__init__(
             name="DEAP",
             path=path,
-            sampling_rate=128,
+            sampling_rate=512,
             electrodes=["Fp1", "AF3", "F3", "F7", "FC5", "FC1", "C3", "T7", "CP5",
                         "CP1", "P3", "P7", "PO3", "O1", "Oz", "Pz", "Fp2", "AF4",
                         "Fz", "F4", "F8", "FC6", "FC2", "Cz", "C4", "T8", "CP6",
@@ -31,28 +35,65 @@ class DEAPDataset(EEGClassificationDataset):
     def load_data(self) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
         global parse_eegs
 
+        self.ratings = pd.read_csv(join(self.path, "participant_ratings.csv"))
+        self.ratings['Participant_id'] = self.ratings['Participant_id'].apply(
+            lambda x: f"s{int(x):02d}")
+        self.ratings.columns = self.ratings.columns.str.lower()
+
         def parse_eegs(subject_id: str) -> Tuple[List[np.ndarray], List[np.ndarray], str]:
-            with open(join(self.path, "data_preprocessed_python", f"{subject_id}.dat"), "rb") as fp:
-                subject_data: Dict[str, np.ndarray] = pickle.load(fp, encoding='latin1')
-            subject_data["data"] = einops.rearrange(subject_data["data"],
-                                                    "b c s -> b s c")[:, :self.sampling_rate * 60, :32]
-            eegs: List[np.ndarray] = []
-            labels: List[np.ndarray] = []
-            experiments_no = len(subject_data["data"])
-            assert experiments_no \
-                   == len(subject_data["data"]) == len(subject_data["labels"])
-            for i_experiment in range(experiments_no):
-                # loads the eeg for the experiment
-                eegs += [subject_data["data"][i_experiment]]  # (s c)
-                # loads the labels for the experiment
-                labels += [subject_data["labels"][i_experiment]]  # (l)
+            # preprocessed
+            # with open(join(self.path, "data_preprocessed_python", f"{subject_id}.dat"), "rb") as fp:
+            #     eegs_raw: Dict[str, np.ndarray] = pickle.load(
+            #         fp, encoding='latin1')
+            # raw
+            eegs_raw = mne.io.read_raw_bdf(
+                input_fname=join(self.path, "data_original",
+                                 f"{subject_id}.bdf"),
+                include=self.electrodes + ["Status"],
+                verbose=False
+            )
+            if (status_channel := "Status") not in eegs_raw.ch_names:
+                return
+            eegs_events = mne.find_events(
+                eegs_raw, stim_channel=status_channel, verbose=False)
+            eegs_epochs = mne.Epochs(raw=eegs_raw, events=eegs_events, event_id=4, tmin=0, tmax=60, baseline=(
+                0, 0), verbose=False, picks=self.electrodes)
+            eegs = eegs_epochs.get_data(verbose=False)
+            # filters the data
+            if self.min_freq > 0 or self.max_freq < 20000:
+                eegs = mne.filter.filter_data(
+                    data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=False)
+            eegs = einops.rearrange(
+                eegs, "v c t -> v t c")[:, :self.sampling_rate * 60]
+            assert list(eegs.shape) == [40, self.sampling_rate * 60, len(
+                self.electrodes)], f"{eegs.shape} != {[40, self.sampling_rate * 60, len(self.electrodes)]}"
+            # labels
+            ratings = self.ratings[self.ratings["participant_id"]
+                                   == subject_id].sort_values(by="trial")
+            labels = ratings[self.labels].values
+            assert list(labels.shape) == [eegs.shape[0], len(self.labels)]
+            # converts to lists
+            eegs, labels = [x for x in eegs], [x for x in labels]
+            # eegs_raw["data"] = einops.rearrange(eegs_raw["data"],
+            #                                         "b c s -> b s c")[:, :self.sampling_rate * 60, :32]
+            # eegs: List[np.ndarray] = []
+            # labels: List[np.ndarray] = []
+            # experiments_no = len(eegs_raw["data"])
+            # assert experiments_no \
+            #     == len(eegs_raw["data"]) == len(eegs_raw["labels"])
+            # for i_experiment in range(experiments_no):
+            #     # loads the eeg for the experiment
+            #     eegs += [eegs_raw["data"][i_experiment]]  # (s c)
+            #     # loads the labels for the experiment
+            #     labels += [eegs_raw["labels"][i_experiment]]  # (l)
             # eventually discretizes the labels
             labels = [[1 if label > 5 else 0 for label in w] if self.discretize_labels else (w - 1) / 8
                       for w in labels]
             return eegs, labels, subject_id
 
         with Pool(processes=len(self.subject_ids)) as pool:
-            data_pool = pool.map(parse_eegs, [s_id for s_id in self.subject_ids])
+            data_pool = pool.map(
+                parse_eegs, [s_id for s_id in self.subject_ids])
             data_pool = [d for d in data_pool if d is not None]
             eegs: List[np.ndarray] = [e for eeg_lists, _, _ in data_pool
                                       for e in eeg_lists]

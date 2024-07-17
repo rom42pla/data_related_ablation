@@ -28,6 +28,8 @@ class EEGClassificationDataset(Dataset, ABC):
             labels: List[str],
             subject_ids: List[str],
             labels_classes: Union[int, List[int]] = 2,
+            min_freq: Optional[Union[int, float]] = None, 
+            max_freq: Optional[Union[int, float]] = None,
 
             window_size: Optional[Union[float, int]] = 1,
             window_stride: Optional[Union[float, int]] = None,
@@ -53,6 +55,14 @@ class EEGClassificationDataset(Dataset, ABC):
         elif isinstance(electrodes, int):
             self.electrodes = [f"electrode_{x}" for x in range(electrodes)]
         self.electrodes: List[str] = electrodes
+        
+        if min_freq is None:
+            min_freq = 0
+        self.min_freq = min_freq
+        if max_freq is None:
+            max_freq = 20000
+        self.max_freq = max_freq
+        assert 0 <= self.min_freq < self.max_freq
 
         assert isinstance(labels, list)
         assert all((isinstance(x, str) for x in labels))
@@ -114,12 +124,13 @@ class EEGClassificationDataset(Dataset, ABC):
             eegs = np.concatenate([eegs,
                                    np.zeros([self.samples_per_window - eegs.shape[0], eegs.shape[1]])],
                                   axis=0)
-        assert eegs.shape[0] == self.samples_per_window
+        eegs = einops.rearrange(eegs, "t c -> c t")
+        assert eegs.shape[1] == self.samples_per_window
         return {
             "sampling_rates": self.sampling_rate,
             "subject_id": window["subject_id"],
-            "eegs": eegs.astype(np.float32),
-            "labels": window["labels"]
+            "eegs": torch.from_numpy(eegs.astype(np.float32)),
+            "labels": torch.from_numpy(window["labels"])
         }
 
     def prepare_data(self) -> None:

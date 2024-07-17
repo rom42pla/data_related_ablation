@@ -11,8 +11,10 @@ pyyaml
 torch
 torchvision
 torchaudio
+torchmetrics
 lightning
 transformers
+wandb
 
 
 
