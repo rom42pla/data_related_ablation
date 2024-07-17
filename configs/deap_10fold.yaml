@@ -1,6 +1,7 @@
 dataset: deap
 dataset_path: ../../datasets/deap
 setting: cross_subject
+model: linear
 device: gpu
 seed: 42
 windows_size: 1

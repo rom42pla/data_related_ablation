@@ -1,4 +1,5 @@
-from dino4eeg import DINO4EEG
+from models.linear import Linear4EEG
+from models.mlp import MLP4EEG
 
 
 if __name__ == '__main__':
@@ -22,11 +23,9 @@ if __name__ == '__main__':
     import wandb
     wandb.require("core")
 
-    # from arg_parsers.train import get_args
-    # from plots import plot_metrics, plot_cross_subject
     from utils import set_global_seed, parse_dataset_class, get_k_fold_runs, get_loso_runs, get_simple_runs
+    from models.dino4eeg import DINO4EEG
     from datasets.base_class import EEGClassificationDataset
-    # from models.sateer import SATEER
 
     import torchaudio
 
@@ -79,14 +78,37 @@ if __name__ == '__main__':
     # instantiate the model
     device = "cuda" if args["device"] in [
         "gpu", "cuda"] and torch.cuda.is_available() else "cpu"
-    model = DINO4EEG(
-        eeg_sampling_rate=dataset.sampling_rate,
-        eeg_num_channels=len(dataset.electrodes),
-        num_labels=len(dataset.labels),
-        min_freq=args["min_freq"],
-        max_freq=args["max_freq"],
-    )
+    if args["model"] == "linear":
+        model = Linear4EEG(
+            eeg_sampling_rate=dataset.sampling_rate,
+            eeg_num_channels=len(dataset.electrodes),
+            eeg_samples=dataset[0]["eegs"].shape[-1],
+            num_labels=len(dataset.labels),
+            min_freq=args["min_freq"],
+            max_freq=args["max_freq"],
+        )
+    elif args["model"] == "mlp":
+        model = MLP4EEG(
+            eeg_sampling_rate=dataset.sampling_rate,
+            eeg_num_channels=len(dataset.electrodes),
+            eeg_samples=dataset[0]["eegs"].shape[-1],
+            num_labels=len(dataset.labels),
+            min_freq=args["min_freq"],
+            max_freq=args["max_freq"],
+        )
+    elif args["model"] == "dino":
+        model = DINO4EEG(
+            eeg_sampling_rate=dataset.sampling_rate,
+            eeg_num_channels=len(dataset.electrodes),
+            eeg_samples=dataset[0]["eegs"].shape[-1],
+            num_labels=len(dataset.labels),
+            min_freq=args["min_freq"],
+            max_freq=args["max_freq"],
+        )
+    else:
+        raise NotImplementedError(f"model {args['model']} not implemented")
     # saves the initial weights
+    print(model)
     initial_state_dict_path = join(".", "_initial_state_dict.pth")
     torch.save({"model_state_dict": model.state_dict()},
                initial_state_dict_path)
