@@ -1,7 +1,3 @@
-from models.linear import Linear4EEG
-from models.mlp import MLP4EEG
-
-
 if __name__ == '__main__':
     import argparse
     import os
@@ -24,8 +20,12 @@ if __name__ == '__main__':
     wandb.require("core")
 
     from utils import set_global_seed, parse_dataset_class, get_k_fold_runs, get_loso_runs, get_simple_runs
+    from models.linear import Linear4EEG
+    from models.mlp import MLP4EEG
     from models.dino4eeg import DINO4EEG
     from datasets.base_class import EEGClassificationDataset
+    from datasets.deap import DEAPDataset
+    from datasets.amigos import AMIGOSDataset
 
     import torchaudio
 
@@ -52,32 +52,40 @@ if __name__ == '__main__':
     makedirs(experiment_path, exist_ok=True)
 
     # sets up the dataset
-    dataset_class = parse_dataset_class(name=args["dataset"])
+    if args["dataset"] == "deap":
+        dataset_class = DEAPDataset
+    if args["dataset"] == "amigos":
+        dataset_class = AMIGOSDataset
+    else:
+        raise NotImplementedError(f"unknown dataset {args['dataset']}")
     dataset: EEGClassificationDataset = dataset_class(
         path=args['dataset_path'],
         window_size=args['windows_size'],
         window_stride=args['windows_stride'],
         drop_last=True,
-        discretize_labels=not args['dont_discretize_labels'],
-        normalize_eegs=not args['dont_normalize_eegs'],
+        discretize_labels=True,
+        normalize_eegs=True,
     )
 
-    if args['setting'] == "cross_subject":
-        if args['validation'] in ["k_fold", "kfold"]:
-            runs = get_k_fold_runs(k=args["k"], dataset=dataset)
-        elif args['validation'] == "loso":
-            runs = get_loso_runs(dataset=dataset)
-        elif args['validation'] == "simple":
-            runs = get_simple_runs(
-                dataset=dataset, train_perc=args["train_perc"])
-        else:
-            raise NotImplementedError
+    if args['validation'] in ["k_fold", "kfold"]:
+        runs = get_k_fold_runs(k=args["k"], dataset=dataset)
+    elif args['validation'] == "loso":
+        runs = get_loso_runs(dataset=dataset)
+    elif args['validation'] == "simple":
+        runs = get_simple_runs(
+            dataset=dataset, train_perc=args["train_perc"])
     else:
         raise NotImplementedError
 
     # instantiate the model
-    device = "cuda" if args["device"] in [
-        "gpu", "cuda"] and torch.cuda.is_available() else "cpu"
+    if args["device"] == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    elif args["device"] in {"cuda", "gpu"}:
+        device = "cuda"
+    elif args["device"] == "cpu":
+        device = "cpu"
+    else:
+        raise NotImplementedError(f"unrecognized device {args['device']}")
     if args["model"] == "linear":
         model = Linear4EEG(
             eeg_sampling_rate=dataset.sampling_rate,
@@ -132,8 +140,11 @@ if __name__ == '__main__':
             shuffle=False, pin_memory=True, num_workers=num_workers)
 
         # initialize the model
+        model.to("cpu")
         model.load_state_dict(torch.load(
             initial_state_dict_path)['model_state_dict'])
+        model.to(device)
+        
         wandb_logger = WandbLogger(
             project="noisy_eeg", name=run_name, log_model=False, prefix=f"run_{i_run}")
         trainer = Trainer(logger=wandb_logger, accelerator=device,

@@ -3,6 +3,7 @@ tqdm
 numpy
 scikit-learn
 pandas
+openpyxl
 einops
 matplotlib
 mne
