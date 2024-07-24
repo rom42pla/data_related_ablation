@@ -10,7 +10,6 @@ from models.base_model import EEGClassificationModel
 class DINO4EEG(EEGClassificationModel):
     def __init__(self,
                  patch_size: int = 1,
-                 hidden_size: int = 512,
                  num_hidden_layers: int = 4,
                  num_attention_heads: int = 8,
                  hidden_act: str = "gelu",
@@ -20,7 +19,6 @@ class DINO4EEG(EEGClassificationModel):
         self.save_hyperparameters()
 
         self.patch_size = patch_size
-        self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
@@ -29,7 +27,7 @@ class DINO4EEG(EEGClassificationModel):
         self.model = Dinov2Model(Dinov2Config(
             num_channels=self.num_channels,
             patch_size=self.patch_size,
-            hidden_size=self.hidden_size,
+            hidden_size=self.h_dim,
             hidden_act=self.hidden_act,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
@@ -37,15 +35,14 @@ class DINO4EEG(EEGClassificationModel):
             attention_probs_dropout_prob=self.dropout,
             reshape_hidden_states=False,
         ))
-        self.classifier = nn.Linear(self.hidden_size, self.num_labels)
         self.save_hyperparameters()
 
     def forward(self, eegs):
         outs = {}
         outs["mel_spec"] = self.mel_spectrogrammer(eegs)  # [b c m t]
         outs["features"] = self.model(
-            outs["mel_spec"]).last_hidden_state  # [b p h]
-        outs["logits"] = self.classifier(outs["features"][:, 0])  # [b l]
+            outs["mel_spec"]).last_hidden_state[:, 0]  # [b p h]
+        # outs["logits"] = self.classifier(outs["features"])  # [b l]
         return outs
 
 

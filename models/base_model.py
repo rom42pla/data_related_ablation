@@ -22,7 +22,7 @@ class EEGClassificationModel(pl.LightningModule):
                  n_mels: int = 8,
                  min_freq: Optional[int] = None,
                  max_freq: Optional[int] = None,
-                 h_dim: int = 768,
+                 h_dim: int = 512,
                  predict_ids: bool = True,
                  ids: Optional[List[str]] = None,
                  lr: float = 5e-5):
@@ -98,7 +98,7 @@ class EEGClassificationModel(pl.LightningModule):
         ), f"'features' not returned by the model. Current keys are {outs.keys()}"
 
         # classification head
-        assert outs["features"].shape[-1] == self.h_dim
+        assert outs["features"].shape[-1] == self.h_dim, f"{outs['features'].shape} != {self.h_dim}"
         outs["cls_labels"] = batch["labels"].float().to(self.device)
         outs["cls_logits"] = self.cls_head(outs["features"])
         outs["metrics"].update({

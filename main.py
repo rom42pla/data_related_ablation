@@ -102,7 +102,7 @@ if __name__ == '__main__':
         model_class = DINO4EEG
     else:
         raise NotImplementedError(f"model {args['model']} not implemented")
-    model = model_class(
+    model: EEGClassificationModel = model_class(
         eeg_sampling_rate=dataset.sampling_rate,
         eeg_num_channels=len(dataset.electrodes),
         eeg_samples=dataset[0]["eegs"].shape[-1],
@@ -110,6 +110,7 @@ if __name__ == '__main__':
         min_freq=args["min_freq"],
         max_freq=args["max_freq"],
         predict_ids=args["predict_ids"],
+        h_dim=args["hidden_size"],
         ids=dataset.subject_ids,
     )
     
