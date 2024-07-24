@@ -48,6 +48,7 @@ class EEGClassificationDataset(Dataset, ABC):
 
         assert isinstance(sampling_rate, int)
         self.sampling_rate: int = sampling_rate
+        self.nyquist_freq = self.sampling_rate // 2 - 1
 
         assert electrodes is None or isinstance(electrodes, list) or isinstance(electrodes, int)
         if isinstance(electrodes, list):
@@ -58,10 +59,10 @@ class EEGClassificationDataset(Dataset, ABC):
         
         if min_freq is None:
             min_freq = 0
-        self.min_freq = min_freq
+        self.min_freq = max(1, min_freq)
         if max_freq is None:
-            max_freq = 20000
-        self.max_freq = max_freq
+            max_freq = self.nyquist_freq
+        self.max_freq = min(self.nyquist_freq, max_freq)
         assert 0 <= self.min_freq < self.max_freq
 
         assert isinstance(labels, list)
@@ -101,17 +102,20 @@ class EEGClassificationDataset(Dataset, ABC):
         self.normalize_eegs: bool = normalize_eegs
 
         self.eegs_data, self.labels_data, self.subject_ids_data = self.load_data()
+        # updates subject_ids
+        self.subject_ids= sorted(set(self.subject_ids_data))
+
         # discard corrupted and null experiments
-        non_null_indices = {i for i, eegs in enumerate(self.eegs_data)
-                            if np.count_nonzero(np.isnan(eegs)) <= eegs.size * 0.9}
-        self.eegs_data = [v for i, v in enumerate(self.eegs_data) if i in non_null_indices]
-        self.labels_data = [v for i, v in enumerate(self.labels_data) if i in non_null_indices]
-        self.subject_ids_data = [v for i, v in enumerate(self.subject_ids_data) if i in non_null_indices]
+        # non_null_indices = {i for i, eegs in enumerate(self.eegs_data)
+        #                     if np.count_nonzero(np.isnan(eegs)) <= eegs.size * 0.9}
+        # self.eegs_data = [v for i, v in enumerate(self.eegs_data) if i in non_null_indices]
+        # self.labels_data = [v for i, v in enumerate(self.labels_data) if i in non_null_indices]
+        # self.subject_ids_data = [v for i, v in enumerate(self.subject_ids_data) if i in non_null_indices]
         if self.normalize_eegs:
             self.eegs_data = self.normalize(self.eegs_data)
         self.windows = self.get_windows()
         assert len(self.eegs_data) == len(self.labels_data) == len(self.subject_ids_data)
-        assert all([e.shape[-1] == len(self.electrodes) for e in self.eegs_data])
+        # assert all([e.shape[-1] == len(self.electrodes) for e in self.eegs_data])
 
     def __len__(self) -> int:
         return len(self.windows)
@@ -310,3 +314,17 @@ class EEGClassificationDataset(Dataset, ABC):
             ax.set_ylim([None, max_ylim])
         plt.show()
         fig.clf()
+        
+    @staticmethod
+    def plot_eeg_psd(eeg_data, sampling_rate):
+        n_channels, _ = eeg_data.shape
+
+        # Create MNE info structure
+        info = mne.create_info(ch_names=[f'Channel {i+1}' for i in range(n_channels)],
+                            sfreq=sampling_rate,
+                            ch_types='eeg')
+        raw = mne.io.RawArray(eeg_data, info)
+        
+        fig, ax = plt.subplots(1, 1)
+        raw.plot_psd(ax=ax)
+        plt.show()

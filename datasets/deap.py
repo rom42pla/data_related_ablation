@@ -89,6 +89,7 @@ class DEAPDataset(EEGClassificationDataset):
             # eventually discretizes the labels
             labels = [[1 if label > 5 else 0 for label in w] if self.discretize_labels else (w - 1) / 8
                       for w in labels]
+            # self.plot_eeg_psd(einops.rearrange(eegs[0], "t c -> c t"), self.sampling_rate)
             return eegs, labels, subject_id
 
         with Pool(processes=len(self.subject_ids)) as pool:

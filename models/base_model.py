@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from colorama import Fore
 from loguru import logger
 import math
 import torch
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 import lightning as pl
 import torchmetrics
 from typing import Optional, Union, List
+from torch import nn
 from torchaudio.transforms import MelSpectrogram
 
 
@@ -20,12 +22,16 @@ class EEGClassificationModel(pl.LightningModule):
                  n_mels: int = 8,
                  min_freq: Optional[int] = None,
                  max_freq: Optional[int] = None,
+                 h_dim: int = 768,
+                 predict_ids: bool = True,
+                 ids: Optional[List[str]] = None,
                  lr: float = 5e-5):
         super(EEGClassificationModel, self).__init__()
         self.save_hyperparameters()
 
         # spectrogram params
         self.eeg_sampling_rate = eeg_sampling_rate
+        self.nyquist_freq = self.eeg_sampling_rate // 2
         self.eeg_samples = eeg_samples
         self.n_mels = n_mels
         if min_freq is not None:
@@ -33,7 +39,7 @@ class EEGClassificationModel(pl.LightningModule):
         self.min_freq = min_freq
         if max_freq is not None:
             assert max_freq >= 0
-        self.max_freq = max_freq
+        self.max_freq = min(self.nyquist_freq, max_freq)
         assert eeg_windows_size > 0
         self.eeg_windows_size: int = math.floor(
             eeg_windows_size * self.eeg_sampling_rate)
@@ -55,7 +61,21 @@ class EEGClassificationModel(pl.LightningModule):
         ).float()
         self.num_labels = num_labels
         self.num_channels = eeg_num_channels
-        
+
+        # heads params
+        assert isinstance(h_dim, int) and h_dim > 0, h_dim
+        self.h_dim = h_dim
+        self.cls_head = nn.Linear(self.h_dim, self.num_labels)
+        assert isinstance(predict_ids, bool)
+        self.predict_ids = predict_ids
+        if self.predict_ids:
+            assert ids is not None and len(ids) > 1, ids
+            self.id2int = {
+                id: i
+                for i, id in enumerate(ids)
+            }
+            self.ids_head = nn.Linear(self.h_dim, len(self.id2int))
+
         # optimizer params
         assert lr > 0
         self.lr = lr
@@ -68,31 +88,58 @@ class EEGClassificationModel(pl.LightningModule):
     def forward(self, eegs):
         pass
 
-    def step(self, batch):
-        phase = "train" if self.training else "val"
+    def step(self, batch, phase):
+        # performs feature extraction
         outs = {
-            "labels": batch["labels"].float().to(self.device),
+            "metrics": {},
             **self(batch["eegs"].float().to(self.device)),
         }
-        outs["loss"] = F.binary_cross_entropy_with_logits(
-            input=outs["logits"], target=outs["labels"])
-        outs["metrics"] = {
-            "accuracy": torchmetrics.functional.accuracy(preds=outs["logits"], target=outs["labels"], task="multilabel", num_labels=self.num_labels, average="micro"),
-            "loss": outs["loss"],
-        }
+        assert "features" in outs.keys(
+        ), f"'features' not returned by the model. Current keys are {outs.keys()}"
+
+        # classification head
+        assert outs["features"].shape[-1] == self.h_dim
+        outs["cls_labels"] = batch["labels"].float().to(self.device)
+        outs["cls_logits"] = self.cls_head(outs["features"])
+        outs["metrics"].update({
+            "cls_loss": F.binary_cross_entropy_with_logits(input=outs["cls_logits"], target=outs["cls_labels"]),
+            "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel", num_labels=self.num_labels, average="micro"),
+            "cls_f1": torchmetrics.functional.f1_score(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel", num_labels=self.num_labels, average="micro"),
+        })
+
+        if self.predict_ids:
+            # ids head
+            assert "subject_id" in batch
+            outs["ids_labels"] = torch.as_tensor(
+                [self.id2int[id] for id in batch["subject_id"]], dtype=torch.long, device=self.device)
+            outs["ids_logits"] = self.ids_head(outs["features"])
+            outs["metrics"].update({
+                "ids_loss": F.cross_entropy(input=outs["ids_logits"], target=outs["ids_labels"]),
+                "ids_acc": torchmetrics.functional.accuracy(preds=outs["ids_logits"], target=outs["ids_labels"], task="multiclass", num_classes=len(self.id2int), average="micro"),
+                "ids_f1": torchmetrics.functional.f1_score(preds=outs["ids_logits"], target=outs["ids_labels"], task="multiclass", num_classes=len(self.id2int), average="micro"),
+            })
+
+        # computes final loss
+        outs["loss"] = sum(
+            [v for k, v in outs["metrics"].items() if k.endswith("loss") and v.numel() == 1])
+
+        # logs metrics
         for metric_name, metric_value in outs["metrics"].items():
-            self.log(name=f"{metric_name}/{phase}", value=metric_value, prog_bar=True,
+            # color = Fore.CYAN if phase == "train" else Fore.YELLOW
+            self.log(name=f"{metric_name}/{phase}", value=metric_value,
+                     prog_bar=any([metric_name.endswith(s)
+                                  for s in {"f1"}]),
                      on_step=False, on_epoch=True, batch_size=batch["eegs"].shape[0])
         return outs
 
     def training_step(self, batch, batch_idx):
-        outs = self.step(batch)
+        outs = self.step(batch, phase="train")
         return outs
 
     def validation_step(self, batch, batch_idx):
-        outs = self.step(batch)
+        outs = self.step(batch, phase="val")
         return outs
 
     def test_step(self, batch, batch_idx):
-        outs = self.step(batch)
+        outs = self.step(batch, phase="test")
         return outs

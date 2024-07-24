@@ -20,26 +20,11 @@ import lightning as L
 from torch.utils.data import Dataset, DataLoader, Subset
 
 # from datasets.amigos import AMIGOSDataset
-from datasets.deap import DEAPDataset
-from datasets.dreamer import DREAMERDataset
 from datasets.base_class import EEGClassificationDataset
 # from datasets.seed import SEEDDataset
 # from loggers.logger import FouriEEGTransformerLogger
 # from models.sateer import SATEER
 
-
-def parse_dataset_class(name: str):
-    if name == "deap":
-        dataset_class = DEAPDataset
-    elif name == "dreamer":
-        dataset_class = DREAMERDataset
-    elif name == "amigos":
-        dataset_class = AMIGOSDataset
-    elif name == "seed":
-        dataset_class = SEEDDataset
-    else:
-        raise NotImplementedError(f"unknown dataset {name}")
-    return dataset_class
 
 
 def set_global_seed(seed: int):

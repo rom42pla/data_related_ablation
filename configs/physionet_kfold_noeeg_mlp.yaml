@@ -1,0 +1,17 @@
+batch_size: 128
+checkpoints_path: ./checkpoints
+dataset: physionet
+dataset_path: ../../datasets/physionet
+device: auto
+k: 10
+lr: 0.0005
+max_epochs: 10
+max_freq: 20000
+min_freq: 100
+model: mlp
+seed: 42
+single_run: false
+train_perc: 0.8
+validation: kfold
+windows_size: 1
+windows_stride: 1

@@ -5,12 +5,13 @@ dataset_path: ../../datasets/deap
 device: auto
 k: 10
 lr: 5.0e-05
-max_epochs: 10
+max_epochs: 50
 max_freq: 100
 min_freq: 0
 model: dino
+predict_ids: false
 seed: 42
-single_run: true
+single_run: false
 train_perc: 0.8
 validation: loso
 windows_size: 1

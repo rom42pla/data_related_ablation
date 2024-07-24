@@ -4,13 +4,14 @@ dataset: deap
 dataset_path: ../../datasets/deap
 device: auto
 k: 10
-lr: 0.0005
-max_epochs: 10
+lr: 0.001
+max_epochs: 50
 max_freq: 100
 min_freq: 0
 model: mlp
+predict_ids: true
 seed: 42
-single_run: true
+single_run: false
 train_perc: 0.8
 validation: kfold
 windows_size: 1

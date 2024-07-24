@@ -1,4 +1,10 @@
+from datasets.grasp_and_lift import GraspAndLiftDataset
+from models.base_model import EEGClassificationModel
+
 if __name__ == '__main__':
+    import colorama
+    colorama.init()
+    
     import argparse
     import os
     import gc
@@ -19,7 +25,7 @@ if __name__ == '__main__':
     import wandb
     wandb.require("core")
 
-    from utils import set_global_seed, parse_dataset_class, get_k_fold_runs, get_loso_runs, get_simple_runs
+    from utils import set_global_seed, get_k_fold_runs, get_loso_runs, get_simple_runs
     from models.linear import Linear4EEG
     from models.mlp import MLP4EEG
     from models.dino4eeg import DINO4EEG
@@ -54,8 +60,10 @@ if __name__ == '__main__':
     # sets up the dataset
     if args["dataset"] == "deap":
         dataset_class = DEAPDataset
-    if args["dataset"] == "amigos":
+    elif args["dataset"] == "amigos":
         dataset_class = AMIGOSDataset
+    elif args["dataset"] in {"grasp_and_lift", "gal"}:
+        dataset_class = GraspAndLiftDataset
     else:
         raise NotImplementedError(f"unknown dataset {args['dataset']}")
     dataset: EEGClassificationDataset = dataset_class(
@@ -87,34 +95,24 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError(f"unrecognized device {args['device']}")
     if args["model"] == "linear":
-        model = Linear4EEG(
-            eeg_sampling_rate=dataset.sampling_rate,
-            eeg_num_channels=len(dataset.electrodes),
-            eeg_samples=dataset[0]["eegs"].shape[-1],
-            num_labels=len(dataset.labels),
-            min_freq=args["min_freq"],
-            max_freq=args["max_freq"],
-        )
+        model_class = Linear4EEG
     elif args["model"] == "mlp":
-        model = MLP4EEG(
-            eeg_sampling_rate=dataset.sampling_rate,
-            eeg_num_channels=len(dataset.electrodes),
-            eeg_samples=dataset[0]["eegs"].shape[-1],
-            num_labels=len(dataset.labels),
-            min_freq=args["min_freq"],
-            max_freq=args["max_freq"],
-        )
+        model_class = MLP4EEG
     elif args["model"] == "dino":
-        model = DINO4EEG(
-            eeg_sampling_rate=dataset.sampling_rate,
-            eeg_num_channels=len(dataset.electrodes),
-            eeg_samples=dataset[0]["eegs"].shape[-1],
-            num_labels=len(dataset.labels),
-            min_freq=args["min_freq"],
-            max_freq=args["max_freq"],
-        )
+        model_class = DINO4EEG
     else:
         raise NotImplementedError(f"model {args['model']} not implemented")
+    model = model_class(
+        eeg_sampling_rate=dataset.sampling_rate,
+        eeg_num_channels=len(dataset.electrodes),
+        eeg_samples=dataset[0]["eegs"].shape[-1],
+        num_labels=len(dataset.labels),
+        min_freq=args["min_freq"],
+        max_freq=args["max_freq"],
+        predict_ids=args["predict_ids"],
+        ids=dataset.subject_ids,
+    )
+    
     # saves the initial weights
     print(model)
     initial_state_dict_path = join(".", "_initial_state_dict.pth")

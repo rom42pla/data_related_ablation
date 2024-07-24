@@ -16,11 +16,11 @@ class Linear4EEG(EEGClassificationModel):
             num_inputs = self.mel_spectrogrammer(x).numel()
             
         # self.classifier = nn.Linear(num_inputs, self.num_labels)
-        self.classifier = nn.Linear(num_inputs, self.num_labels)
+        self.classifier = nn.Linear(num_inputs, self.h_dim)
         self.save_hyperparameters()
 
     def forward(self, eegs):
         outs = {}
         outs["mel_spec"] = self.mel_spectrogrammer(eegs)  # [b c m t]
-        outs["logits"] = self.classifier(outs["mel_spec"].flatten(start_dim=1))  # [b l]
+        outs["features"] = self.classifier(outs["mel_spec"].flatten(start_dim=1))  # [b l]
         return outs

@@ -1,4 +1,5 @@
 loguru
+colorama
 tqdm
 numpy
 scikit-learn
