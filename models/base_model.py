@@ -5,6 +5,7 @@ import math
 import torch
 import torch.nn.functional as F
 import lightning as pl
+import torchaudio
 import torchmetrics
 from typing import Optional, Union, List
 from torch import nn
@@ -90,6 +91,10 @@ class EEGClassificationModel(pl.LightningModule):
 
     def step(self, batch, phase):
         # performs feature extraction
+        batch["eegs"] = torchaudio.functional.lowpass_biquad(
+            waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=self.max_freq)
+        batch["eegs"] = torchaudio.functional.highpass_biquad(
+            waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=self.min_freq)
         outs = {
             "metrics": {},
             **self(batch["eegs"].float().to(self.device)),
@@ -103,8 +108,8 @@ class EEGClassificationModel(pl.LightningModule):
         outs["cls_logits"] = self.cls_head(outs["features"])
         outs["metrics"].update({
             "cls_loss": F.binary_cross_entropy_with_logits(input=outs["cls_logits"], target=outs["cls_labels"]),
-            "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel", num_labels=self.num_labels, average="micro"),
-            "cls_f1": torchmetrics.functional.f1_score(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel", num_labels=self.num_labels, average="micro"),
+            "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
+            "cls_f1": torchmetrics.functional.f1_score(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
         })
 
         if self.predict_ids:

@@ -19,7 +19,7 @@ line_args = vars(parser.parse_args())
 makedirs(line_args["path"], exist_ok=True)
 
 # defines the parameters
-datasets = ["deap", "amigos", "gal"]
+datasets = ["deap", "amigos", "gal", "hg"]
 validations = ["kfold", "loso", "simple"]
 eegs_info = ["eeg", "noeeg"]
 models = ["linear", "mlp", "dino"]

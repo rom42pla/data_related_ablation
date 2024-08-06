@@ -1,4 +1,5 @@
 from datasets.grasp_and_lift import GraspAndLiftDataset
+from datasets.high_gamma import HighGammaDataset
 from models.base_model import EEGClassificationModel
 
 if __name__ == '__main__':
@@ -64,12 +65,16 @@ if __name__ == '__main__':
         dataset_class = AMIGOSDataset
     elif args["dataset"] in {"grasp_and_lift", "gal"}:
         dataset_class = GraspAndLiftDataset
+    elif args["dataset"] in {"high_gamma", "hg"}:
+        dataset_class = HighGammaDataset
     else:
         raise NotImplementedError(f"unknown dataset {args['dataset']}")
     dataset: EEGClassificationDataset = dataset_class(
         path=args['dataset_path'],
         window_size=args['windows_size'],
         window_stride=args['windows_stride'],
+        min_freq=args["min_freq"],
+        max_freq=args["max_freq"],
         drop_last=True,
         discretize_labels=True,
         normalize_eegs=True,
@@ -146,6 +151,7 @@ if __name__ == '__main__':
         
         wandb_logger = WandbLogger(
             project="noisy_eeg", name=run_name, log_model=False, prefix=f"run_{i_run}")
+        # dataset.plot_labels_distribution()
         trainer = Trainer(logger=wandb_logger, accelerator=device,
                           precision="16-mixed", max_epochs=args["max_epochs"],
                           enable_model_summary=True)

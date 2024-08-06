@@ -7,6 +7,8 @@ from pprint import pprint
 from typing import Dict, Optional, Union, List, Tuple
 
 import mne
+from scipy import signal
+from scipy.signal import butter, filtfilt, welch
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, Subset
@@ -58,10 +60,10 @@ class EEGClassificationDataset(Dataset, ABC):
         self.electrodes: List[str] = electrodes
         
         if min_freq is None:
-            min_freq = 0
-        self.min_freq = max(1, min_freq)
+            min_freq = 1
         if max_freq is None:
             max_freq = self.nyquist_freq
+        self.min_freq = max(1, min_freq)
         self.max_freq = min(self.nyquist_freq, max_freq)
         assert 0 <= self.min_freq < self.max_freq
 
@@ -129,7 +131,10 @@ class EEGClassificationDataset(Dataset, ABC):
                                    np.zeros([self.samples_per_window - eegs.shape[0], eegs.shape[1]])],
                                   axis=0)
         eegs = einops.rearrange(eegs, "t c -> c t")
-        assert eegs.shape[1] == self.samples_per_window
+        assert eegs.shape[1] == self.samples_per_window     
+        # asserts that there are no frequencies in the selected ranges
+        # self.plot_eeg_psd(eegs, self.sampling_rate)
+        # psd = self.get_psd(eegs, sampling_rate=self.sampling_rate)
         return {
             "sampling_rates": self.sampling_rate,
             "subject_id": window["subject_id"],
@@ -186,6 +191,23 @@ class EEGClassificationDataset(Dataset, ABC):
                 windows += [window]
         return windows
 
+    @staticmethod
+    def bandpass_filter(eegs, l_freq, h_freq, sampling_rate, order=8):
+        nyquist = 0.5 * sampling_rate
+        low = l_freq / nyquist
+        high = h_freq / nyquist
+        b, a = butter(order, [low, high], btype='band')
+        return filtfilt(b, a, eegs, axis=-1)
+    
+    @staticmethod
+    def get_mean_psd(eegs, sampling_rate):
+        assert len(
+            eegs.shape) == 3, f"data must be (epochs, channels, times), got {eegs.shape}"
+        freqs, psd = welch(
+            eegs.mean((0, 1)), sampling_rate, nperseg=sampling_rate//2)
+        return freqs, psd
+
+    
     def plot_sample(
             self,
             i: int,
@@ -230,55 +252,70 @@ class EEGClassificationDataset(Dataset, ABC):
             self,
             title: str = "distribution of labels",
             scale: Union[int, float] = 4,
-    ) -> None:
-        if self.discretize_labels:
-            cols = min(8, len(self.labels))
-            rows = 1 if (len(self.labels) <= 8) else ceil(len(self.labels) / 8)
-            fig, axs = plt.subplots(nrows=rows, ncols=cols,
-                                    figsize=(scale * cols, scale * rows),
-                                    tight_layout=True)
-            fig.suptitle(title)
-            labels_data = np.stack([x["labels"] for x in self])
-            for i_ax, ax in enumerate(axs.flat):
-                if i_ax >= len(self.labels):
-                    ax.set_visible(False)
-                    continue
-                unique_labels = np.unique(labels_data[:, i_ax])
-                sizes = [np.count_nonzero(labels_data[:, i_ax] == unique_label)
-                         for unique_label in unique_labels]
-                axs.flat[i_ax].pie(sizes, labels=unique_labels, autopct='%1.1f%%',
-                                   shadow=False)
-                axs.flat[i_ax].axis('equal')
-                axs.flat[i_ax].set_title(self.labels[i_ax])
-        else:
-            # builds the dataframe
-            df = pd.DataFrame()
-            for x in self:
-                for i_label, label in enumerate(self.labels):
-                    df = pd.concat([df, pd.DataFrame([{
-                        "label": label,
-                        "value": x["labels"][i_label]
-                    }])], ignore_index=True).sort_values(by="value", ascending=True)
-            fig, axs = plt.subplots(nrows=1, ncols=len(self.labels),
-                                    figsize=(scale * len(self.labels), scale),
-                                    tight_layout=True)
-            fig.suptitle(title)
-            # plots
-            for i_label, label in enumerate(self.labels):
-                ax = axs[i_label]
-                sns.histplot(
-                    data=df[df["label"] == label],
-                    bins=16,
-                    palette="rocket",
-                    ax=ax
-                )
-                ax.set_xlabel(label)
-                ax.set_ylabel("count")
-                ax.get_legend().remove()
-            # adjusts the ylim
-            max_ylim = max([ax.get_ylim()[-1] for ax in axs])
-            for ax in axs:
-                ax.set_ylim([0, max_ylim])
+    ):
+        print("retrieving labels")
+        labels = np.concatenate([window["labels"] for window in self.windows])
+        unique_values, counts = np.unique(labels, return_counts=True)
+        counts = counts / counts.sum()
+
+        # Create a new figure
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(scale, scale))
+
+        # Plot the distribution of the labels
+        ax.bar(unique_values, counts)
+        ax.set_xticks(unique_values)
+        ax.set_xlabel('Label')
+        ax.set_ylabel('Frequency')
+        fig.suptitle(title)
+        
+        # if self.discretize_labels:
+        #     cols = min(8, len(self.labels))
+        #     rows = 1 if (len(self.labels) <= 8) else ceil(len(self.labels) / 8)
+        #     fig, axs = plt.subplots(nrows=rows, ncols=cols,
+        #                             figsize=(scale * cols, scale * rows),
+        #                             tight_layout=True)
+        #     fig.suptitle(title)
+        #     labels_data = np.stack([x["labels"] for x in self])
+        #     for i_ax, ax in enumerate(axs.flat):
+        #         if i_ax >= len(self.labels):
+        #             ax.set_visible(False)
+        #             continue
+        #         unique_labels = np.unique(labels_data[:, i_ax])
+        #         sizes = [np.count_nonzero(labels_data[:, i_ax] == unique_label)
+        #                  for unique_label in unique_labels]
+        #         axs.flat[i_ax].pie(sizes, labels=unique_labels, autopct='%1.1f%%',
+        #                            shadow=False)
+        #         axs.flat[i_ax].axis('equal')
+        #         axs.flat[i_ax].set_title(self.labels[i_ax])
+        # else:
+        #     # builds the dataframe
+        #     df = pd.DataFrame()
+        #     for x in self:
+        #         for i_label, label in enumerate(self.labels):
+        #             df = pd.concat([df, pd.DataFrame([{
+        #                 "label": label,
+        #                 "value": x["labels"][i_label]
+        #             }])], ignore_index=True).sort_values(by="value", ascending=True)
+        #     fig, axs = plt.subplots(nrows=1, ncols=len(self.labels),
+        #                             figsize=(scale * len(self.labels), scale),
+        #                             tight_layout=True)
+        #     fig.suptitle(title)
+        #     # plots
+        #     for i_label, label in enumerate(self.labels):
+        #         ax = axs[i_label]
+        #         sns.histplot(
+        #             data=df[df["label"] == label],
+        #             bins=16,
+        #             palette="rocket",
+        #             ax=ax
+        #         )
+        #         ax.set_xlabel(label)
+        #         ax.set_ylabel("count")
+        #         ax.get_legend().remove()
+        #     # adjusts the ylim
+        #     max_ylim = max([ax.get_ylim()[-1] for ax in axs])
+        #     for ax in axs:
+        #         ax.set_ylim([0, max_ylim])
         plt.show()
         fig.clf()
 

@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import os
 
 import mne
-from scipy.signal import welch
+from scipy.signal import butter, filtfilt, welch
 import numpy as np
 import pandas as pd
 import pickle
@@ -27,7 +27,6 @@ class DEAPDataset(EEGClassificationDataset):
                         "Fz", "F4", "F8", "FC6", "FC2", "Cz", "C4", "T8", "CP6",
                         "CP2", "P4", "P8", "PO4", "O2"],
             labels=["valence", "arousal", "dominance", "liking"],
-            labels_classes=2,
             subject_ids=DEAPDataset.get_subject_ids_static(path=path),
             **kwargs
         )
@@ -60,9 +59,29 @@ class DEAPDataset(EEGClassificationDataset):
                 0, 0), verbose=False, picks=self.electrodes)
             eegs = eegs_epochs.get_data(verbose=False)
             # filters the data
-            if self.min_freq > 0 or self.max_freq < 20000:
-                eegs = mne.filter.filter_data(
-                    data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=False)
+            # eegs = mne.filter.filter_data(
+            #     data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=True)
+            # eegs = mne.filter.filter_data(
+            #     data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=False, method="iir", iir_params={"order": 8, "ftype": "butter"})
+            
+            # freqs, psd_before = self.get_mean_psd(eegs, self.sampling_rate)
+            
+            eegs = self.bandpass_filter(
+                eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
+            
+            # freqs, psd_after = welch(
+            #     eegs.mean((0, 1)), self.sampling_rate, nperseg=256)
+            # freqs, psd_after = self.get_mean_psd(eegs, self.sampling_rate)
+
+            # plt.figure(figsize=(10, 5))
+            # plt.semilogy(freqs, psd_before, label='Before Filtering')
+            # plt.semilogy(freqs, psd_after, label='After Filtering')
+            # plt.xlabel('Frequency (Hz)')
+            # plt.ylabel('Power Spectral Density (PSD)')
+            # plt.legend()
+            # plt.show()
+            # raise
+            # self.plot_eeg_psd(filtered_data[0], self.sampling_rate)
             eegs = einops.rearrange(
                 eegs, "v c t -> v t c")[:, :self.sampling_rate * 60]
             assert list(eegs.shape) == [40, self.sampling_rate * 60, len(
