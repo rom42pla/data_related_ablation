@@ -8,19 +8,19 @@ import yaml
 parser = argparse.ArgumentParser(prog="Noisy EEG",
                                  description='What the program does',
                                  epilog='Text at the bottom of help')
-parser.add_argument("path")
+parser.add_argument("path", help="Where to save the configs")
 parser.add_argument("--batch_size", default=128)
 parser.add_argument("--max_epochs", default=50)
 parser.add_argument("--seed", default=42)
-parser.add_argument("--single_run", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--single_run", action=argparse.BooleanOptionalAction, default=False, help="Whether to stop after the first run in the set")
 line_args = vars(parser.parse_args())
 
 # creates the directory
 makedirs(line_args["path"], exist_ok=True)
 
 # defines the parameters
-datasets = ["deap", "amigos", "gal", "hg"]
-validations = ["kfold", "loso", "simple"]
+datasets = ["deap", "gal", "hg"]
+validations = ["kfold", "loso"]
 eegs_info = ["eeg", "noeeg"]
 models = ["linear", "mlp", "dino"]
 
@@ -32,8 +32,8 @@ for dataset, validation, frequencies, model in itertools.product(datasets, valid
         "device": "auto",
         "model": model,
         "seed": line_args["seed"],
-        "windows_size": 1,
-        "windows_stride": 1,
+        "windows_size": 2,
+        "windows_stride": 2,
         "min_freq": 0 if frequencies == "eeg" else 100,
         "max_freq": 100 if frequencies == "eeg" else 1000,
         "validation": validation,

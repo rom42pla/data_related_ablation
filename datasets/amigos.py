@@ -62,6 +62,9 @@ class AMIGOSDataset(EEGClassificationDataset):
                 np.float32) for i in valid_indices]
             video_ids = [int(video_ids[i])
                          for i in valid_indices]
+            # filters the data
+            eegs = self.bandpass_filter(
+                eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
             
             # parses the labels
             ratings = self.ratings[self.ratings["user_id"]

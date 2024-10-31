@@ -62,7 +62,10 @@ class EEGClassificationModel(pl.LightningModule):
         ).float()
         self.num_labels = num_labels
         self.num_channels = eeg_num_channels
-
+        with torch.no_grad():
+            x = torch.randn([1, self.num_channels, self.eeg_samples])
+            self.spectrogram_shape = self.mel_spectrogrammer(x).shape
+            
         # heads params
         assert isinstance(h_dim, int) and h_dim > 0, h_dim
         self.h_dim = h_dim
@@ -91,21 +94,29 @@ class EEGClassificationModel(pl.LightningModule):
 
     def step(self, batch, phase):
         # performs feature extraction
-        batch["eegs"] = torchaudio.functional.lowpass_biquad(
-            waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=self.max_freq)
-        batch["eegs"] = torchaudio.functional.highpass_biquad(
-            waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=self.min_freq)
+        batch["eegs"] = batch["eegs"].float().to(self.device)
+        assert not torch.isnan(batch["eegs"]).any(), f"batched eegs contains nans"
+        # filters the data
+        # batch["eegs"] = torchaudio.functional.lowpass_biquad(
+        #     waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=float(self.max_freq))
+        # batch["eegs"] = torchaudio.functional.highpass_biquad(
+        #     waveform=batch["eegs"], sample_rate=self.eeg_sampling_rate, cutoff_freq=float(self.min_freq))
+        # batch["eegs"] = batch["eegs"].to(torch.float32)
+        # generates the spectrogram
+        batch["mel_spec"] = self.mel_spectrogrammer(batch["eegs"])  # [b c m t]
+        assert not torch.isnan(batch["mel_spec"]).any(
+        ), f"batched Mel spectrogram contains nans"
         outs = {
             "metrics": {},
-            **self(batch["eegs"].float().to(self.device)),
+            **self(batch["mel_spec"]),
         }
-        assert "features" in outs.keys(
-        ), f"'features' not returned by the model. Current keys are {outs.keys()}"
 
         # classification head
-        assert outs["features"].shape[-1] == self.h_dim, f"{outs['features'].shape} != {self.h_dim}"
+        # assert outs["features"].shape[-1] == self.h_dim, f"{outs['features'].shape} != {self.h_dim}"
         outs["cls_labels"] = batch["labels"].float().to(self.device)
-        outs["cls_logits"] = self.cls_head(outs["features"])
+        if "cls_logits" not in outs:
+            assert "features" in outs, f"key 'features' not returned by the model. Current keys are {outs.keys()}"
+            outs["cls_logits"] = self.cls_head(outs["features"])
         outs["metrics"].update({
             "cls_loss": F.binary_cross_entropy_with_logits(input=outs["cls_logits"], target=outs["cls_labels"]),
             "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
@@ -117,7 +128,9 @@ class EEGClassificationModel(pl.LightningModule):
             assert "subject_id" in batch
             outs["ids_labels"] = torch.as_tensor(
                 [self.id2int[id] for id in batch["subject_id"]], dtype=torch.long, device=self.device)
-            outs["ids_logits"] = self.ids_head(outs["features"])
+            if "ids_logits" not in outs:
+                assert "features" in outs, f"key 'features' not returned by the model. Current keys are {outs.keys()}"
+                outs["ids_logits"] = self.ids_head(outs["features"])
             outs["metrics"].update({
                 "ids_loss": F.cross_entropy(input=outs["ids_logits"], target=outs["ids_labels"]),
                 "ids_acc": torchmetrics.functional.accuracy(preds=outs["ids_logits"], target=outs["ids_labels"], task="multiclass", num_classes=len(self.id2int), average="micro"),

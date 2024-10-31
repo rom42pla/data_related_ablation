@@ -65,7 +65,7 @@ class EEGClassificationDataset(Dataset, ABC):
             max_freq = self.nyquist_freq
         self.min_freq = max(1, min_freq)
         self.max_freq = min(self.nyquist_freq, max_freq)
-        assert 0 <= self.min_freq < self.max_freq
+        assert 0 <= self.min_freq < self.max_freq, f"got 0 <= {self.min_freq} < {self.max_freq}"
 
         assert isinstance(labels, list)
         assert all((isinstance(x, str) for x in labels))
@@ -352,16 +352,13 @@ class EEGClassificationDataset(Dataset, ABC):
         plt.show()
         fig.clf()
         
-    @staticmethod
-    def plot_eeg_psd(eeg_data, sampling_rate):
-        n_channels, _ = eeg_data.shape
-
-        # Create MNE info structure
-        info = mne.create_info(ch_names=[f'Channel {i+1}' for i in range(n_channels)],
-                            sfreq=sampling_rate,
-                            ch_types='eeg')
-        raw = mne.io.RawArray(eeg_data, info)
+    def plot_eeg_psd(self, title="PSD"):
+        info = mne.create_info(ch_names=self.electrodes,
+                            sfreq=self.sampling_rate,
+                            ch_types='eeg', verbose=False)
+        raw = mne.io.RawArray(np.concatenate([eeg for eeg in self.eegs_data], axis=-1), info, verbose=False)
         
         fig, ax = plt.subplots(1, 1)
-        raw.plot_psd(ax=ax)
+        raw.compute_psd().plot(xscale="log", axes=ax)
+        fig.suptitle(title)
         plt.show()

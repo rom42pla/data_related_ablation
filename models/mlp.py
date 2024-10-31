@@ -16,17 +16,10 @@ class MLP4EEG(EEGClassificationModel):
         self.hidden_size = hidden_size
         assert 0 <= dropout < 1
         self.dropout = dropout
-        with torch.no_grad():
-            x = torch.randn([1, self.num_channels, self.eeg_samples])
-            num_inputs = self.mel_spectrogrammer(x).numel()
             
         # self.classifier = nn.Linear(num_inputs, self.num_labels)
         self.classifier = nn.Sequential(
-            nn.Linear(num_inputs, self.hidden_size),
-            nn.Dropout(dropout),
-            nn.ReLU(),
-            
-            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.Linear(self.spectrogram_shape.numel(), self.hidden_size),
             nn.Dropout(dropout),
             nn.ReLU(),
             
@@ -34,8 +27,7 @@ class MLP4EEG(EEGClassificationModel):
         )
         self.save_hyperparameters()
 
-    def forward(self, eegs):
+    def forward(self, mel_spec):
         outs = {}
-        outs["mel_spec"] = self.mel_spectrogrammer(eegs)  # [b c m t]
-        outs["features"] = self.classifier(outs["mel_spec"].flatten(start_dim=1))  # [b f]
+        outs["features"] = self.classifier(mel_spec.flatten(start_dim=1))  # [b f]
         return outs

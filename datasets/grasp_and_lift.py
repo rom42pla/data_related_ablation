@@ -84,8 +84,6 @@ class GraspAndLiftDataset(EEGClassificationDataset):
                 eegs = 2 * ((eegs - eegs.min(axis=(0, 2), keepdims=True)) /
                             (eegs.max(axis=(0, 2), keepdims=True) - eegs.min(axis=(0, 2), keepdims=True))) - 1
             # filters the data
-            # eegs = mne.filter.filter_data(
-            #     data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=False, method="iir", iir_params={"order":8, "ftype":"butter"})
             eegs = self.bandpass_filter(
                 eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
             # builds the structures

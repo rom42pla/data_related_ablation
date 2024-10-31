@@ -15,5 +15,5 @@ seed: 42
 single_run: false
 train_perc: 0.8
 validation: loso
-windows_size: 1
-windows_stride: 1
+windows_size: 2
+windows_stride: 2

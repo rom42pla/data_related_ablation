@@ -37,11 +37,9 @@ class DINO4EEG(EEGClassificationModel):
         ))
         self.save_hyperparameters()
 
-    def forward(self, eegs):
+    def forward(self, mel_spec):
         outs = {}
-        outs["mel_spec"] = self.mel_spectrogrammer(eegs)  # [b c m t]
-        outs["features"] = self.model(
-            outs["mel_spec"]).last_hidden_state[:, 0]  # [b p h]
+        outs["features"] = self.model(mel_spec).last_hidden_state[:, 0]  # [b p h]
         # outs["logits"] = self.classifier(outs["features"])  # [b l]
         return outs
 

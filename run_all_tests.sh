@@ -1,4 +1,9 @@
-python main.py configs/deap_10fold.yaml
-python main.py configs/deap_10fold_noeeg.yaml
-python main.py configs/deap_loso.yaml
-python main.py configs/deap_loso_noeeg.yaml
+python generate_configs.py configs
+for filename in `ls configs`; do
+    if [[ $filename =~ $1 ]];
+    then
+        python main.py configs/$filename
+    else
+        echo "skipping '$filename' as it does not match '$1'"
+    fi
+done

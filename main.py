@@ -1,6 +1,4 @@
-from datasets.grasp_and_lift import GraspAndLiftDataset
-from datasets.high_gamma import HighGammaDataset
-from models.base_model import EEGClassificationModel
+
 
 if __name__ == '__main__':
     import colorama
@@ -24,22 +22,22 @@ if __name__ == '__main__':
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch import Trainer
     import wandb
-    wandb.require("core")
 
     from utils import set_global_seed, get_k_fold_runs, get_loso_runs, get_simple_runs
     from models.linear import Linear4EEG
     from models.mlp import MLP4EEG
     from models.dino4eeg import DINO4EEG
     from datasets.base_class import EEGClassificationDataset
+    from models.base_model import EEGClassificationModel
     from datasets.deap import DEAPDataset
     from datasets.amigos import AMIGOSDataset
+    from datasets.grasp_and_lift import GraspAndLiftDataset
+    from datasets.high_gamma import HighGammaDataset
 
     import torchaudio
 
     # parses line args
-    parser = argparse.ArgumentParser(prog="Noisy EEG",
-                                     description='What the program does',
-                                     epilog='Text at the bottom of help')
+    parser = argparse.ArgumentParser(prog="Noisy EEG")
     parser.add_argument('cfg')
     line_args = vars(parser.parse_args())
     
@@ -125,13 +123,15 @@ if __name__ == '__main__':
     torch.save({"model_state_dict": model.state_dict()},
                initial_state_dict_path)
 
+    # metas
+    date = datetime.now().strftime("%Y%m%d_%H%M")
+    cfg_name = splitext(basename(line_args["cfg"]))[0]
+    run_name = f"{date}_{cfg_name}"
+    
     # loops over runs
     for i_run, run in enumerate(runs):
-        date = datetime.now().strftime("%Y%m%d_%H%M")
-        cfg_name = splitext(basename(line_args["cfg"]))[0]
-        run_name = f"{date}_{cfg_name}"
         logger.info(
-            f"doing run {i_run+1} ({run_name}) of {len(runs)} ({((i_run+1)/len(runs)) * 100:.1f}%)")
+            f"{run_name} with frequencies in [{dataset.min_freq}, {dataset.max_freq}]: doing run {i_run+1} of {len(runs)} ({((i_run+1)/len(runs)) * 100:.1f}%)")
 
         # splits the dataset
         dataloader_train = DataLoader(

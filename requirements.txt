@@ -1,21 +1,25 @@
 loguru
 colorama
 tqdm
-numpy
+
+numpy==1.26.4
 scikit-learn
 pandas
+jupyter
+ipywidgets==7.7.1
 openpyxl
 einops
 matplotlib
+plotly
 mne
 seaborn
 pyyaml
-torch
-torchvision
-torchaudio
+torch==2.1.0
+torchvision==0.16
+torchaudio==2.1.0
 torchmetrics
-lightning
-transformers
+lightning==2.4.0
+transformers==4.45.0
 wandb
 
 
