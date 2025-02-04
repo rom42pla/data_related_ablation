@@ -37,9 +37,13 @@ class EEGClassificationModel(pl.LightningModule):
         self.n_mels = n_mels
         if min_freq is not None:
             assert min_freq >= 0
+        else:
+            min_freq = 0
         self.min_freq = min_freq
         if max_freq is not None:
             assert max_freq >= 0
+        else:
+            max_freq = 100
         self.max_freq = min(self.nyquist_freq, max_freq)
         assert eeg_windows_size > 0
         self.eeg_windows_size: int = math.floor(
@@ -65,7 +69,7 @@ class EEGClassificationModel(pl.LightningModule):
         with torch.no_grad():
             x = torch.randn([1, self.num_channels, self.eeg_samples])
             self.spectrogram_shape = self.mel_spectrogrammer(x).shape
-            
+
         # heads params
         assert isinstance(h_dim, int) and h_dim > 0, h_dim
         self.h_dim = h_dim
@@ -108,7 +112,7 @@ class EEGClassificationModel(pl.LightningModule):
         ), f"batched Mel spectrogram contains nans"
         outs = {
             "metrics": {},
-            **self(batch["mel_spec"]),
+            **self(wf=batch["eegs"], mel_spec=batch["mel_spec"]),
         }
 
         # classification head

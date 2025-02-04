@@ -19,7 +19,7 @@ from datasets.base_class import EEGClassificationDataset
 class HighGammaDataset(EEGClassificationDataset):
     def __init__(self, path: str, **kwargs):
         super(HighGammaDataset, self).__init__(
-            name="Grasp and Lift",
+            name="High Gamma",
             path=path,
             sampling_rate=500,
             electrodes=['EEG Fp1', 'EEG Fp2', 'EEG Fpz', 'EEG F7', 'EEG F3', 'EEG Fz', 'EEG F4', 'EEG F8', 
@@ -39,8 +39,6 @@ class HighGammaDataset(EEGClassificationDataset):
                         'EEG CCP1h', 'EEG CCP2h', 'EEG TTP8h', 'EEG TPP7h', 'EEG CPP1h', 'EEG CPP2h', 'EEG TPP8h', 
                         'EEG PPO9h', 'EEG PPO5h', 'EEG PPO6h', 'EEG PPO10h', 'EEG POO9h', 'EEG POO3h', 'EEG POO4h', 
                         'EEG POO10h', 'EEG OI1h', 'EEG OI2h'],
-            # labels=["HandStart", "FirstDigitTouch", "BothStartLoadPhase",
-            #         "LiftOff", "Replace", "BothReleased"],
             labels=["hand_grasp"],
             labels_classes=2,
             subject_ids=HighGammaDataset.get_subject_ids_static(path=path),

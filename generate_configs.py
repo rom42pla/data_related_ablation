@@ -22,7 +22,7 @@ makedirs(line_args["path"], exist_ok=True)
 datasets = ["deap", "gal", "hg"]
 validations = ["kfold", "loso"]
 eegs_info = ["eeg", "noeeg"]
-models = ["linear", "mlp", "dino"]
+models = ["linear", "mlp", "dino", "eegnet"]
 
 # loops over each configuration
 for dataset, validation, frequencies, model in itertools.product(datasets, validations, eegs_info, models):

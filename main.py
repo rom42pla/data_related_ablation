@@ -1,9 +1,10 @@
+from models.eegnet import EEGNet
 
 
 if __name__ == '__main__':
     import colorama
     colorama.init()
-    
+
     import argparse
     import os
     import gc
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="Noisy EEG")
     parser.add_argument('cfg')
     line_args = vars(parser.parse_args())
-    
+
     # torchaudio.set_audio_backend("sox_io")
     num_workers = os.cpu_count() // 2
     with open(line_args["cfg"], 'r') as fp:
@@ -103,6 +104,8 @@ if __name__ == '__main__':
         model_class = MLP4EEG
     elif args["model"] == "dino":
         model_class = DINO4EEG
+    elif args["model"] == "eegnet":
+        model_class = EEGNet
     else:
         raise NotImplementedError(f"model {args['model']} not implemented")
     model: EEGClassificationModel = model_class(
@@ -116,7 +119,7 @@ if __name__ == '__main__':
         h_dim=args["hidden_size"],
         ids=dataset.subject_ids,
     )
-    
+
     # saves the initial weights
     print(model)
     initial_state_dict_path = join(".", "_initial_state_dict.pth")
@@ -127,7 +130,7 @@ if __name__ == '__main__':
     date = datetime.now().strftime("%Y%m%d_%H%M")
     cfg_name = splitext(basename(line_args["cfg"]))[0]
     run_name = f"{date}_{cfg_name}"
-    
+
     # loops over runs
     for i_run, run in enumerate(runs):
         logger.info(
@@ -148,7 +151,7 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(
             initial_state_dict_path)['model_state_dict'])
         model.to(device)
-        
+
         wandb_logger = WandbLogger(
             project="noisy_eeg", name=run_name, log_model=False, prefix=f"run_{i_run}")
         # dataset.plot_labels_distribution()

@@ -27,7 +27,7 @@ class MLP4EEG(EEGClassificationModel):
         )
         self.save_hyperparameters()
 
-    def forward(self, mel_spec):
+    def forward(self, wf, mel_spec):
         outs = {}
         outs["features"] = self.classifier(mel_spec.flatten(start_dim=1))  # [b f]
         return outs
