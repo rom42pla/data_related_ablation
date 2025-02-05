@@ -10,6 +10,8 @@ import torchmetrics
 from typing import Optional, Union, List
 from torch import nn
 from torchaudio.transforms import MelSpectrogram
+import torchmetrics.utilities
+import torchmetrics.utilities.compute
 
 
 class EEGClassificationModel(pl.LightningModule):
@@ -123,11 +125,34 @@ class EEGClassificationModel(pl.LightningModule):
         if "cls_logits" not in outs:
             assert "features" in outs, f"key 'features' not returned by the model. Current keys are {outs.keys()}"
             outs["cls_logits"] = self.cls_head(outs["features"])
-        outs["metrics"].update({
-            "cls_loss": F.binary_cross_entropy_with_logits(input=outs["cls_logits"], target=outs["cls_labels"]),
-            "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
-            "cls_f1": torchmetrics.functional.f1_score(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
-        })
+        outs["metrics"].update(
+            {
+                "cls_loss": F.binary_cross_entropy_with_logits(
+                    input=outs["cls_logits"], target=outs["cls_labels"]
+                ),
+                "cls_acc": torchmetrics.functional.accuracy(
+                    preds=outs["cls_logits"],
+                    target=outs["cls_labels"],
+                    task="multilabel" if self.num_labels > 1 else "binary",
+                    num_labels=self.num_labels,
+                    average="micro",
+                ),
+                "cls_f1": torchmetrics.functional.f1_score(
+                    preds=outs["cls_logits"],
+                    target=outs["cls_labels"],
+                    task="multilabel" if self.num_labels > 1 else "binary",
+                    num_labels=self.num_labels,
+                    average="micro",
+                ),
+                "cls_auc": torchmetrics.functional.auroc(
+                    preds=outs["cls_logits"],
+                    target=outs["cls_labels"].long(),
+                    task="multilabel" if self.num_labels > 1 else "binary",
+                    num_labels=self.num_labels,
+                    average="micro",
+                ),
+            }
+        )
         # per-label metrics
         for i_label, label in enumerate(self.labels):
             outs["metrics"].update(
@@ -141,6 +166,12 @@ class EEGClassificationModel(pl.LightningModule):
                     f"cls_label={label}_f1": torchmetrics.functional.f1_score(
                         preds=outs["cls_logits"][:, i_label],
                         target=outs["cls_labels"][:, i_label],
+                        task="binary",
+                        average="micro",
+                    ),
+                    f"cls_label={label}_auc": torchmetrics.functional.auroc(
+                        preds=outs["cls_logits"][:, i_label],
+                        target=outs["cls_labels"][:, i_label].long(),
                         task="binary",
                         average="micro",
                     ),
@@ -169,7 +200,7 @@ class EEGClassificationModel(pl.LightningModule):
         for metric_name, metric_value in outs["metrics"].items():
             # color = Fore.CYAN if phase == "train" else Fore.YELLOW
             self.log(name=f"{metric_name}/{phase}", value=metric_value,
-                     prog_bar=any(["cls_f1", "ids_f1"]),
+                     prog_bar=True if metric_name in ["cls_f1", "ids_f1"] else False,
                      on_step=False, on_epoch=True, batch_size=batch["eegs"].shape[0])
         return outs
 

@@ -44,7 +44,7 @@ for dataset, validation, frequencies, model in itertools.product(datasets, valid
         "max_epochs": line_args["max_epochs"],
         # "max_epochs": 50 if dataset in {"deap", "amigos"} else 100,
         "hidden_size": 512,
-        "lr": 5e-5 if model == "dino" else 1e-3,
+        "lr": 5e-5 if model in {"dino", "sateer"} else 5e-4,
         "predict_ids": True if validation not in {"loso"} else False,
         "single_run": line_args["single_run"],
     }
