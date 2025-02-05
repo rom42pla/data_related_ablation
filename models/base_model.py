@@ -17,7 +17,7 @@ class EEGClassificationModel(pl.LightningModule):
                  eeg_sampling_rate: int,
                  eeg_num_channels: int,
                  eeg_samples: int,
-                 num_labels: int,
+                 labels: List[str],
                  eeg_windows_size: Union[int, float] = 0.2,
                  eeg_windows_stride: Union[int, float] = 0.1,
                  n_mels: int = 8,
@@ -64,7 +64,9 @@ class EEGClassificationModel(pl.LightningModule):
             center=True,
             normalized=True,
         ).float()
-        self.num_labels = num_labels
+        assert labels is not None and len(labels) > 1, labels
+        self.labels = labels
+        self.num_labels = len(self.labels)
         self.num_channels = eeg_num_channels
         with torch.no_grad():
             x = torch.randn([1, self.num_channels, self.eeg_samples])
@@ -126,6 +128,24 @@ class EEGClassificationModel(pl.LightningModule):
             "cls_acc": torchmetrics.functional.accuracy(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
             "cls_f1": torchmetrics.functional.f1_score(preds=outs["cls_logits"], target=outs["cls_labels"], task="multilabel" if self.num_labels > 1 else "binary", num_labels=self.num_labels, average="micro"),
         })
+        # per-label metrics
+        for i_label, label in enumerate(self.labels):
+            outs["metrics"].update(
+                {
+                    f"cls_label={label}_acc": torchmetrics.functional.accuracy(
+                        preds=outs["cls_logits"][:, i_label],
+                        target=outs["cls_labels"][:, i_label],
+                        task="binary",
+                        average="micro",
+                    ),
+                    f"cls_label={label}_f1": torchmetrics.functional.f1_score(
+                        preds=outs["cls_logits"][:, i_label],
+                        target=outs["cls_labels"][:, i_label],
+                        task="binary",
+                        average="micro",
+                    ),
+                }
+            )
 
         if self.predict_ids:
             # ids head
@@ -149,8 +169,7 @@ class EEGClassificationModel(pl.LightningModule):
         for metric_name, metric_value in outs["metrics"].items():
             # color = Fore.CYAN if phase == "train" else Fore.YELLOW
             self.log(name=f"{metric_name}/{phase}", value=metric_value,
-                     prog_bar=any([metric_name.endswith(s)
-                                  for s in {"f1"}]),
+                     prog_bar=any(["cls_f1", "ids_f1"]),
                      on_step=False, on_epoch=True, batch_size=batch["eegs"].shape[0])
         return outs
 

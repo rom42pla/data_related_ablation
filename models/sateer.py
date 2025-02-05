@@ -178,7 +178,6 @@ class SATEER(EEGClassificationModel):
         # metas
         self.in_channels = self.num_channels
         self.sampling_rate = self.eeg_sampling_rate
-        self.labels = [f"label_{i}" for i in range(self.num_labels)]
 
         self.labels_classes = [2 for _ in self.labels]
         assert isinstance(users_embeddings, bool)

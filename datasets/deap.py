@@ -13,7 +13,7 @@ import pickle
 import einops
 import matplotlib.pyplot as plt
 
-from datasets.base_class import EEGClassificationDataset
+from datasets.base_dataset import EEGClassificationDataset
 
 
 class DEAPDataset(EEGClassificationDataset):

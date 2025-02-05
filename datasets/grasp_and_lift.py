@@ -13,7 +13,7 @@ import pickle
 import einops
 import torch
 
-from datasets.base_class import EEGClassificationDataset
+from datasets.base_dataset import EEGClassificationDataset
 
 
 class GraspAndLiftDataset(EEGClassificationDataset):

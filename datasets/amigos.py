@@ -10,7 +10,7 @@ import pandas as pd
 import pickle
 import einops
 
-from datasets.base_class import EEGClassificationDataset
+from datasets.base_dataset import EEGClassificationDataset
 
 
 class AMIGOSDataset(EEGClassificationDataset):

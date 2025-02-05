@@ -20,7 +20,7 @@ import lightning as L
 from torch.utils.data import Dataset, DataLoader, Subset
 
 # from datasets.amigos import AMIGOSDataset
-from datasets.base_class import EEGClassificationDataset
+from datasets.base_dataset import EEGClassificationDataset
 # from datasets.seed import SEEDDataset
 # from loggers.logger import FouriEEGTransformerLogger
 # from models.sateer import SATEER

@@ -30,7 +30,7 @@ if __name__ == '__main__':
     from models.linear import Linear4EEG
     from models.mlp import MLP4EEG
     from models.dino4eeg import DINO4EEG
-    from datasets.base_class import EEGClassificationDataset
+    from datasets.base_dataset import EEGClassificationDataset
     from models.base_model import EEGClassificationModel
     from datasets.deap import DEAPDataset
     from datasets.amigos import AMIGOSDataset
@@ -118,7 +118,7 @@ if __name__ == '__main__':
         eeg_sampling_rate=dataset.sampling_rate,
         eeg_num_channels=len(dataset.electrodes),
         eeg_samples=dataset[0]["eegs"].shape[-1],
-        num_labels=len(dataset.labels),
+        labels=dataset.labels,
         min_freq=args["min_freq"],
         max_freq=args["max_freq"],
         predict_ids=args["predict_ids"],
