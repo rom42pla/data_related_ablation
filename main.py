@@ -1,4 +1,6 @@
+from models.edpnet import EDPNet
 from models.eegnet import EEGNet
+from models.sateer import SATEER
 
 
 if __name__ == '__main__':
@@ -106,6 +108,10 @@ if __name__ == '__main__':
         model_class = DINO4EEG
     elif args["model"] == "eegnet":
         model_class = EEGNet
+    elif args["model"] == "edpnet":
+        model_class = EDPNet
+    elif args["model"] == "sateer":
+        model_class = SATEER
     else:
         raise NotImplementedError(f"model {args['model']} not implemented")
     model: EEGClassificationModel = model_class(

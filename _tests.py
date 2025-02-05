@@ -2,6 +2,7 @@ import torch
 
 from models.edpnet import EDPNet
 from models.eegnet import EEGNet
+from models.sateer import SATEER
 
 
 if __name__ == "__main__":
@@ -34,3 +35,14 @@ if __name__ == "__main__":
     )
     out_edpnet = edpnet(eeg_sample)
     print(f"EDPNet output has shape\t\t{tuple(out_edpnet['cls_logits'].shape)}")
+
+    # SATEER
+    sateer = SATEER(
+        eeg_sampling_rate=eeg_sampling_rate,
+        eeg_num_channels=eeg_num_channels,
+        eeg_samples=eeg_samples,
+        num_labels=2,
+        predict_ids=False,
+    )
+    out_sateer = sateer(eeg_sample)
+    print(f"SATEER output has shape\t\t{tuple(out_sateer['cls_logits'].shape)}")
