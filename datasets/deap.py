@@ -22,13 +22,44 @@ class DEAPDataset(EEGClassificationDataset):
             name="DEAP",
             path=path,
             sampling_rate=512,
-            electrodes=["Fp1", "AF3", "F3", "F7", "FC5", "FC1", "C3", "T7", "CP5",
-                        "CP1", "P3", "P7", "PO3", "O1", "Oz", "Pz", "Fp2", "AF4",
-                        "Fz", "F4", "F8", "FC6", "FC2", "Cz", "C4", "T8", "CP6",
-                        "CP2", "P4", "P8", "PO4", "O2"],
+            eeg_electrodes=[
+                "Fp1",
+                "AF3",
+                "F3",
+                "F7",
+                "FC5",
+                "FC1",
+                "C3",
+                "T7",
+                "CP5",
+                "CP1",
+                "P3",
+                "P7",
+                "PO3",
+                "O1",
+                "Oz",
+                "Pz",
+                "Fp2",
+                "AF4",
+                "Fz",
+                "F4",
+                "F8",
+                "FC6",
+                "FC2",
+                "Cz",
+                "C4",
+                "T8",
+                "CP6",
+                "CP2",
+                "P4",
+                "P8",
+                "PO4",
+                "O2",
+            ],
+            eog_electrodes=["EXG1", "EXG2", "EXG3", "EXG4"],
             labels=["valence", "arousal", "dominance", "liking"],
             subject_ids=DEAPDataset.get_subject_ids_static(path=path),
-            **kwargs
+            **kwargs,
         )
 
     def load_data(self) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
@@ -48,7 +79,7 @@ class DEAPDataset(EEGClassificationDataset):
             eegs_raw = mne.io.read_raw_bdf(
                 input_fname=join(self.path, "data_original",
                                  f"{subject_id}.bdf"),
-                include=self.electrodes + ["Status"],
+                include=self.electrodes + self.eog_electrodes + ["Status"],
                 verbose=False
             )
             if (status_channel := "Status") not in eegs_raw.ch_names:
@@ -56,19 +87,19 @@ class DEAPDataset(EEGClassificationDataset):
             eegs_events = mne.find_events(
                 eegs_raw, stim_channel=status_channel, verbose=False)
             eegs_epochs = mne.Epochs(raw=eegs_raw, events=eegs_events, event_id=4, tmin=0, tmax=60, baseline=(
-                0, 0), verbose=False, picks=self.electrodes)
+                0, 0), verbose=False, picks=self.electrodes + self.eog_electrodes)
             eegs = eegs_epochs.get_data(verbose=False)
             # filters the data
             # eegs = mne.filter.filter_data(
             #     data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=True)
             # eegs = mne.filter.filter_data(
             #     data=eegs, sfreq=self.sampling_rate, l_freq=self.min_freq, h_freq=self.max_freq, n_jobs=1, verbose=False, method="iir", iir_params={"order": 8, "ftype": "butter"})
-            
+
             # freqs, psd_before = self.get_mean_psd(eegs, self.sampling_rate)
-            
+
             eegs = self.bandpass_filter(
                 eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
-            
+
             # freqs, psd_after = welch(
             #     eegs.mean((0, 1)), self.sampling_rate, nperseg=256)
             # freqs, psd_after = self.get_mean_psd(eegs, self.sampling_rate)
@@ -85,7 +116,7 @@ class DEAPDataset(EEGClassificationDataset):
             eegs = einops.rearrange(
                 eegs, "v c t -> v t c")[:, :self.sampling_rate * 60]
             assert list(eegs.shape) == [40, self.sampling_rate * 60, len(
-                self.electrodes)], f"{eegs.shape} != {[40, self.sampling_rate * 60, len(self.electrodes)]}"
+                self.electrodes + self.eog_electrodes)], f"{eegs.shape} != {[40, self.sampling_rate * 60, len(self.electrodes + self.eog_electrodes)]}"
             # labels
             ratings = self.ratings[self.ratings["participant_id"]
                                    == subject_id].sort_values(by="trial")

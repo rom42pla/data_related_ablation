@@ -79,6 +79,7 @@ if __name__ == '__main__':
         drop_last=True,
         discretize_labels=True,
         normalize_eegs=True,
+        remove_artifacts=True,
     )
 
     if args['validation'] in ["k_fold", "kfold"]:

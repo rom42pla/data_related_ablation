@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(prog="Noisy EEG",
                                  epilog='Text at the bottom of help')
 parser.add_argument("path", help="Where to save the configs")
 parser.add_argument("--batch_size", default=128)
-parser.add_argument("--max_epochs", default=50)
+parser.add_argument("--max_epochs", default=30)
 parser.add_argument("--seed", default=42)
 parser.add_argument("--single_run", action=argparse.BooleanOptionalAction, default=False, help="Whether to stop after the first run in the set")
 line_args = vars(parser.parse_args())

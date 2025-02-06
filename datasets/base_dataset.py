@@ -1,7 +1,8 @@
-import gc
+import os
 from abc import abstractmethod, ABC
 from copy import deepcopy
 from math import ceil
+from multiprocessing import Pool
 from os.path import isdir
 from pprint import pprint
 from typing import Dict, Optional, Union, List, Tuple
@@ -23,23 +24,23 @@ from tqdm import tqdm
 class EEGClassificationDataset(Dataset, ABC):
 
     def __init__(
-            self,
-            path: str,
-            sampling_rate: int,
-            electrodes: Union[int, List[str]],
-            labels: List[str],
-            subject_ids: List[str],
-            labels_classes: Union[int, List[int]] = 2,
-            min_freq: Optional[Union[int, float]] = None, 
-            max_freq: Optional[Union[int, float]] = None,
-
-            window_size: Optional[Union[float, int]] = 1,
-            window_stride: Optional[Union[float, int]] = None,
-            drop_last: Optional[bool] = False,
-
-            discretize_labels: bool = False,
-            normalize_eegs: bool = True,
-            name: Optional[str] = None,
+        self,
+        path: str,
+        sampling_rate: int,
+        eeg_electrodes: Union[int, List[str]],
+        eog_electrodes: Union[int, List[str]],
+        labels: List[str],
+        subject_ids: List[str],
+        labels_classes: Union[int, List[int]] = 2,
+        min_freq: Optional[Union[int, float]] = None,
+        max_freq: Optional[Union[int, float]] = None,
+        window_size: Optional[Union[float, int]] = 1,
+        window_stride: Optional[Union[float, int]] = None,
+        drop_last: Optional[bool] = False,
+        discretize_labels: bool = False,
+        normalize_eegs: bool = True,
+        remove_artifacts: bool = True,
+        name: Optional[str] = None,
     ):
         super().__init__()
 
@@ -52,13 +53,19 @@ class EEGClassificationDataset(Dataset, ABC):
         self.sampling_rate: int = sampling_rate
         self.nyquist_freq = self.sampling_rate // 2 - 1
 
-        assert electrodes is None or isinstance(electrodes, list) or isinstance(electrodes, int)
-        if isinstance(electrodes, list):
-            assert all((isinstance(x, str) for x in electrodes))
-        elif isinstance(electrodes, int):
-            self.electrodes = [f"electrode_{x}" for x in range(electrodes)]
-        self.electrodes: List[str] = electrodes
-        
+        assert (
+            eeg_electrodes is None
+            or isinstance(eeg_electrodes, list)
+            or isinstance(eeg_electrodes, int)
+        )
+        if isinstance(eeg_electrodes, list):
+            assert all((isinstance(x, str) for x in eeg_electrodes))
+        elif isinstance(eeg_electrodes, int):
+            self.electrodes = [f"electrode_{x}" for x in range(eeg_electrodes)]
+        self.electrodes: List[str] = eeg_electrodes
+
+        self.eog_electrodes = eog_electrodes
+
         if min_freq is None:
             min_freq = 1
         if max_freq is None:
@@ -100,6 +107,8 @@ class EEGClassificationDataset(Dataset, ABC):
 
         assert isinstance(discretize_labels, bool)
         self.discretize_labels: bool = discretize_labels
+        assert isinstance(remove_artifacts, bool)
+        self.remove_artifacts: bool = remove_artifacts
         assert isinstance(normalize_eegs, bool)
         self.normalize_eegs: bool = normalize_eegs
 
@@ -113,8 +122,13 @@ class EEGClassificationDataset(Dataset, ABC):
         # self.eegs_data = [v for i, v in enumerate(self.eegs_data) if i in non_null_indices]
         # self.labels_data = [v for i, v in enumerate(self.labels_data) if i in non_null_indices]
         # self.subject_ids_data = [v for i, v in enumerate(self.subject_ids_data) if i in non_null_indices]
+        if self.remove_artifacts:
+            self.artifact_removal(self.eegs_data)
         if self.normalize_eegs:
             self.eegs_data = self.normalize(self.eegs_data)
+        # removes eog channels
+        for i_eeg in range(len(self.eegs_data)):
+            self.eegs_data[i_eeg] = self.eegs_data[i_eeg][:, :len(self.electrodes)]
         self.windows = self.get_windows()
         assert len(self.eegs_data) == len(self.labels_data) == len(self.subject_ids_data)
         # assert all([e.shape[-1] == len(self.electrodes) for e in self.eegs_data])
@@ -153,6 +167,25 @@ class EEGClassificationDataset(Dataset, ABC):
     @abstractmethod
     def load_data(self) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
         pass
+
+    def artifact_removal(self, eegs, notch_freq=50, ica_n_components=0.95):
+        for i in tqdm(range(len(eegs)), desc="Removing artifacts"):
+            info = mne.create_info(ch_names=self.electrodes + self.eog_electrodes, sfreq=self.sampling_rate, ch_types=["eeg"] * len(self.electrodes) + ["eog"] * len(self.eog_electrodes), verbose=False)
+            raw = mne.io.RawArray(eegs[i].T, info, verbose=False)
+
+            # apply Notch filter at 50 Hz
+            raw = raw.notch_filter(freqs=notch_freq, fir_design="firwin", n_jobs=1, verbose=False)
+
+            # apply ICA for eog artifact removal
+            raw = raw.filter(l_freq=1., h_freq=None, verbose=False)
+            ica = mne.preprocessing.ICA(n_components=ica_n_components, random_state=42, max_iter=1000, verbose=False)
+            ica.fit(raw, verbose=False)
+            eog_indices, _ = ica.find_bads_eog(raw, verbose=False)  # detect eye-related artifacts
+            ica.exclude = eog_indices # Mark artifacts for removal
+            raw = ica.apply(raw, verbose=False)  # apply ICA in place
+
+            # write the cleaned data back into the original NumPy array
+            eegs[i] = raw.get_data().T
 
     def normalize(self, eegs: List[np.ndarray]):
         # scales to zero mean and unit variance
@@ -198,7 +231,7 @@ class EEGClassificationDataset(Dataset, ABC):
         high = h_freq / nyquist
         b, a = butter(order, [low, high], btype='band')
         return filtfilt(b, a, eegs, axis=-1)
-    
+
     @staticmethod
     def get_mean_psd(eegs, sampling_rate):
         assert len(
@@ -207,7 +240,6 @@ class EEGClassificationDataset(Dataset, ABC):
             eegs.mean((0, 1)), sampling_rate, nperseg=sampling_rate//2)
         return freqs, psd
 
-    
     def plot_sample(
             self,
             i: int,
@@ -267,7 +299,7 @@ class EEGClassificationDataset(Dataset, ABC):
         ax.set_xlabel('Label')
         ax.set_ylabel('Frequency')
         fig.suptitle(title)
-        
+
         # if self.discretize_labels:
         #     cols = min(8, len(self.labels))
         #     rows = 1 if (len(self.labels) <= 8) else ceil(len(self.labels) / 8)
@@ -351,13 +383,13 @@ class EEGClassificationDataset(Dataset, ABC):
             ax.set_ylim([None, max_ylim])
         plt.show()
         fig.clf()
-        
+
     def plot_eeg_psd(self, title="PSD"):
         info = mne.create_info(ch_names=self.electrodes,
                             sfreq=self.sampling_rate,
                             ch_types='eeg', verbose=False)
         raw = mne.io.RawArray(np.concatenate([eeg for eeg in self.eegs_data], axis=-1), info, verbose=False)
-        
+
         fig, ax = plt.subplots(1, 1)
         raw.compute_psd().plot(xscale="log", axes=ax)
         fig.suptitle(title)
