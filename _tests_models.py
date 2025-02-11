@@ -12,6 +12,7 @@ if __name__ == "__main__":
     seconds = 1
     eeg_samples = int(eeg_sampling_rate * seconds)
     eeg_sample = torch.rand(1, eeg_num_channels, eeg_samples)
+    labels = ["valence", "arousal"]
     print(f"dummy input has shape\t\t{tuple(eeg_sample.shape)}")
 
     # EEGNet
@@ -19,7 +20,7 @@ if __name__ == "__main__":
         eeg_sampling_rate=eeg_sampling_rate,
         eeg_num_channels=eeg_num_channels,
         eeg_samples=eeg_samples,
-        num_labels=2,
+        labels=labels,
         predict_ids=False,
     )
     out_eegnet = eegnet(eeg_sample)
@@ -30,7 +31,7 @@ if __name__ == "__main__":
         eeg_sampling_rate=eeg_sampling_rate,
         eeg_num_channels=eeg_num_channels,
         eeg_samples=eeg_samples,
-        num_labels=2,
+        labels=labels,
         predict_ids=False,
     )
     out_edpnet = edpnet(eeg_sample)
@@ -41,8 +42,8 @@ if __name__ == "__main__":
         eeg_sampling_rate=eeg_sampling_rate,
         eeg_num_channels=eeg_num_channels,
         eeg_samples=eeg_samples,
-        num_labels=2,
+        labels=labels,
         predict_ids=False,
     )
-    out_sateer = sateer(eeg_sample)
+    out_sateer = sateer(wf=eeg_sample, mel_spec=sateer.mel_spectrogrammer(eeg_sample))
     print(f"SATEER output has shape\t\t{tuple(out_sateer['cls_logits'].shape)}")

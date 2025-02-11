@@ -26,6 +26,7 @@ class EEGClassificationDataset(Dataset, ABC):
     def __init__(
         self,
         path: str,
+        name: str,
         sampling_rate: int,
         eeg_electrodes: Union[int, List[str]],
         eog_electrodes: Union[int, List[str]],
@@ -40,7 +41,6 @@ class EEGClassificationDataset(Dataset, ABC):
         discretize_labels: bool = False,
         normalize_eegs: bool = True,
         remove_artifacts: bool = True,
-        name: Optional[str] = None,
     ):
         super().__init__()
 
@@ -63,7 +63,6 @@ class EEGClassificationDataset(Dataset, ABC):
         elif isinstance(eeg_electrodes, int):
             self.electrodes = [f"electrode_{x}" for x in range(eeg_electrodes)]
         self.electrodes: List[str] = eeg_electrodes
-
         self.eog_electrodes = eog_electrodes
 
         if min_freq is None:
@@ -94,6 +93,9 @@ class EEGClassificationDataset(Dataset, ABC):
         self.subject_ids: List[str] = subject_ids
         self.subject_ids.sort()
 
+        if self.name == {"High Gamma"}:
+            assert window_size == 4, "window_size must be 4"
+            assert window_stride == 4, "window_stride must be 4"
         assert window_size > 0
         self.window_size: float = float(window_size)  # s
         self.samples_per_window: int = int(np.floor(self.sampling_rate * self.window_size))
@@ -116,19 +118,17 @@ class EEGClassificationDataset(Dataset, ABC):
         # updates subject_ids
         self.subject_ids= sorted(set(self.subject_ids_data))
 
-        # discard corrupted and null experiments
-        # non_null_indices = {i for i, eegs in enumerate(self.eegs_data)
-        #                     if np.count_nonzero(np.isnan(eegs)) <= eegs.size * 0.9}
-        # self.eegs_data = [v for i, v in enumerate(self.eegs_data) if i in non_null_indices]
-        # self.labels_data = [v for i, v in enumerate(self.labels_data) if i in non_null_indices]
-        # self.subject_ids_data = [v for i, v in enumerate(self.subject_ids_data) if i in non_null_indices]
-        if self.remove_artifacts:
-            self.artifact_removal(self.eegs_data)
-        if self.normalize_eegs:
-            self.eegs_data = self.normalize(self.eegs_data)
-        # removes eog channels
-        for i_eeg in range(len(self.eegs_data)):
-            self.eegs_data[i_eeg] = self.eegs_data[i_eeg][:, :len(self.electrodes)]
+        if self.name != "High Gamma":
+            if self.remove_artifacts:
+                self.artifact_removal_inplace(self.eegs_data)
+            if self.normalize_eegs:
+                self.eegs_data = self.normalize(self.eegs_data)
+            # removes eog channels
+            for i_eeg in range(len(self.eegs_data)):
+                self.eegs_data[i_eeg] = self.eegs_data[i_eeg][:, :len(self.electrodes)]
+            # eventually filters data
+            self.bands_filter_inplace(self.eegs_data)
+
         self.windows = self.get_windows()
         assert len(self.eegs_data) == len(self.labels_data) == len(self.subject_ids_data)
         # assert all([e.shape[-1] == len(self.electrodes) for e in self.eegs_data])
@@ -168,11 +168,18 @@ class EEGClassificationDataset(Dataset, ABC):
     def load_data(self) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
         pass
 
-    def artifact_removal(self, eegs, notch_freq=50, ica_n_components=0.95):
-        for i in tqdm(range(len(eegs)), desc="Removing artifacts"):
-            info = mne.create_info(ch_names=self.electrodes + self.eog_electrodes, sfreq=self.sampling_rate, ch_types=["eeg"] * len(self.electrodes) + ["eog"] * len(self.eog_electrodes), verbose=False)
-            raw = mne.io.RawArray(eegs[i].T, info, verbose=False)
-
+    def artifact_removal_inplace(self, eegs, notch_freq=50, ica_n_components=0.96):
+        is_numpy = isinstance(eegs, np.ndarray)
+        if not is_numpy:
+            eegs = [eegs]
+        # apply ICA for eog artifact removal
+        for i in tqdm(range(len(eegs)), desc="Removing artifacts", disable=not is_numpy):
+            if is_numpy:
+                # create MNE raw object
+                info = mne.create_info(ch_names=self.electrodes + self.eog_electrodes, sfreq=self.sampling_rate, ch_types=["eeg"] * len(self.electrodes) + ["eog"] * len(self.eog_electrodes), verbose=False)
+                raw = mne.io.RawArray(eegs[i].T, info, verbose=False)
+            else:
+                raw = eegs[i]
             # apply Notch filter at 50 Hz
             raw = raw.notch_filter(freqs=notch_freq, fir_design="firwin", n_jobs=1, verbose=False)
 
@@ -180,12 +187,15 @@ class EEGClassificationDataset(Dataset, ABC):
             raw = raw.filter(l_freq=1., h_freq=None, verbose=False)
             ica = mne.preprocessing.ICA(n_components=ica_n_components, random_state=42, max_iter=1000, verbose=False)
             ica.fit(raw, verbose=False)
-            eog_indices, _ = ica.find_bads_eog(raw, verbose=False)  # detect eye-related artifacts
-            ica.exclude = eog_indices # Mark artifacts for removal
+            eog_indices, _ = ica.find_bads_eog(raw, ch_name=self.eog_electrodes[1], verbose=False)  # detect eye-related artifacts
+            ica.exclude = eog_indices # mark artifacts for removal
             raw = ica.apply(raw, verbose=False)  # apply ICA in place
 
-            # write the cleaned data back into the original NumPy array
-            eegs[i] = raw.get_data().T
+            if is_numpy:
+                # write the cleaned data back into the original NumPy array
+                eegs[i] = raw.get_data().T
+            else:
+                return raw
 
     def normalize(self, eegs: List[np.ndarray]):
         # scales to zero mean and unit variance
@@ -205,7 +215,29 @@ class EEGClassificationDataset(Dataset, ABC):
                                      (experiment_scaled.max(axis=0) - experiment_scaled.min(axis=0))) - 1
             eegs[i_experiment] = experiment_scaled
         return eegs
+    
+    def bands_filter_inplace(self, eegs):
+        is_numpy = isinstance(eegs, np.ndarray)
+        if not is_numpy:
+            eegs = [eegs]
+        for i in tqdm(range(len(eegs)), desc=f"Filtering data between {self.min_freq} and {self.max_freq}Hz", disable=not is_numpy):
+            if is_numpy:
+                # create MNE raw object
+                info = mne.create_info(ch_names=self.electrodes, sfreq=self.sampling_rate, ch_types="eeg", verbose=False)
+                raw = mne.io.RawArray(eegs[i].T, info, verbose=False)
+            else:
+                raw = eegs[i]
 
+            # apply ICA for eog artifact removal
+            raw = raw.filter(l_freq=self.min_freq, h_freq=self.max_freq, verbose=False)
+
+            if is_numpy:
+                # write the cleaned data back into the original NumPy array
+                eegs[i] = raw.get_data().T
+            # write the cleaned data back into the original NumPy array
+            else:
+                return raw
+            
     def get_windows(self) -> List[Dict[str, Union[int, str]]]:
         windows: List[Dict[str, Union[int, str]]] = []
         for i_experiment in range(len(self.eegs_data)):

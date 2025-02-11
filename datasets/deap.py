@@ -97,8 +97,8 @@ class DEAPDataset(EEGClassificationDataset):
 
             # freqs, psd_before = self.get_mean_psd(eegs, self.sampling_rate)
 
-            eegs = self.bandpass_filter(
-                eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
+            # eegs = self.bandpass_filter(
+            #     eegs, l_freq=self.min_freq, h_freq=self.max_freq, sampling_rate=self.sampling_rate, order=4)
 
             # freqs, psd_after = welch(
             #     eegs.mean((0, 1)), self.sampling_rate, nperseg=256)

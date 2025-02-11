@@ -70,6 +70,9 @@ if __name__ == '__main__':
         dataset_class = HighGammaDataset
     else:
         raise NotImplementedError(f"unknown dataset {args['dataset']}")
+    if args["dataset"] in {"high_gamma", "hg"} and (args["windows_size"] != 4 or args["windows_stride"] != 4):
+        print("WARNING: high_gamma dataset is compatible only with windows_size of 4. It has now been set to 4")
+        args["windows_size"], args["windows_stride"] = 4, 4
     dataset: EEGClassificationDataset = dataset_class(
         path=args['dataset_path'],
         window_size=args['windows_size'],

@@ -12,77 +12,6 @@ import math
 from models.base_model import EEGClassificationModel
 
 
-class MelSpectrogram(nn.Module):
-    def __init__(
-        self,
-        sampling_rate: int,
-        window_size: Union[int, float],
-        window_stride: Union[int, float],
-        mels: int = 8,
-        min_freq: int = 0,
-        max_freq: int = 50,
-    ):
-        super().__init__()
-        # assertions
-        assert isinstance(sampling_rate, int) and sampling_rate >= 1
-        self.sampling_rate: int = sampling_rate
-        assert (
-            isinstance(min_freq, int)
-            and isinstance(max_freq, int)
-            and 0 <= min_freq <= max_freq
-        )
-        self.min_freq: int = min_freq
-        self.max_freq: int = max_freq
-        assert isinstance(mels, int) and mels > 0
-        self.mels: int = mels
-        assert window_size > 0
-        self.window_size: int = math.floor(window_size * self.sampling_rate)
-        assert window_stride > 0
-        self.window_stride: int = math.floor(window_stride * self.sampling_rate)
-
-    def forward(
-        self,
-        eegs: torch.Tensor,
-    ):
-        assert len(eegs.shape) in {2, 3}
-        is_batched = True if len(eegs.shape) == 3 else False
-        if not is_batched:
-            eegs = einops.rearrange(eegs, "s c -> () s c")
-        is_numpy = True if isinstance(eegs, np.ndarray) else False
-        if is_numpy:
-            eegs = torch.from_numpy(eegs)
-        window_size = min(self.window_size, eegs.shape[1])
-        window_stride = min(self.window_stride, window_size // 2)
-        # with warnings.catch_warnings():
-        #     warnings.simplefilter("ignore")
-        mel_fn = (
-            torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sampling_rate,
-                f_min=self.min_freq,
-                f_max=self.max_freq,
-                n_mels=self.mels,
-                center=True,
-                # n_fft=192,
-                n_fft=max(128, window_size),
-                normalized=True,
-                power=1,
-                win_length=window_size,
-                hop_length=window_stride,
-                pad=math.ceil(window_stride // 2),
-            )
-            .to(eegs.device)
-            .float()
-        )
-        eegs = einops.rearrange(eegs, "b s c -> b c s")
-        spectrogram = mel_fn(eegs)  # (b c m s)
-        spectrogram = einops.rearrange(spectrogram, "b c m s -> b s c m")
-        if not is_batched:
-            spectrogram = einops.rearrange(spectrogram, "b s c m -> (b s) c m")
-        if is_numpy:
-            spectrogram = spectrogram.numpy()
-        return spectrogram
-
-
 class GetSinusoidalPositionalEmbeddings(nn.Module):
     def __init__(self, max_position_embeddings: int = 1024):
         super().__init__()
@@ -268,14 +197,6 @@ class SATEER(EEGClassificationModel):
         if self.encoder_only is False:
             self.labels_embedder = nn.Embedding(len(self.labels), self.hidden_size)
 
-        self.get_spectrogram = MelSpectrogram(
-            sampling_rate=self.sampling_rate,
-            min_freq=0,
-            max_freq=50,
-            mels=self.mels,
-            window_size=self.mel_window_size,
-            window_stride=self.mel_window_stride,
-        )
         self.merge_mels = nn.Sequential(
             Rearrange("b s c m -> b c m s"),
             nn.Conv2d(
@@ -358,6 +279,7 @@ class SATEER(EEGClassificationModel):
     def forward(
         self,
         wf: torch.Tensor,
+        mel_spec: torch.Tensor,
         ids: Optional[Union[int, str, List[Union[int, str]], np.ndarray]] = None,
         **kwargs
     ):
@@ -435,7 +357,8 @@ class SATEER(EEGClassificationModel):
 
         # converts the eegs to a spectrogram
         # with profiler.record_function("spectrogram"):
-        spectrogram = self.get_spectrogram(eegs)  # (b s c m)
+        spectrogram = einops.rearrange(mel_spec, "b c m s -> b s c m")   # (b s c m)
+        assert spectrogram.shape[2:] == (self.num_channels, self.mels), f"expected {spectrogram.shape[2:]} == {(self.num_channels, self.mels)}" 
         # MelSpectrogram.plot_mel_spectrogram(spectrogram[0])
         if self.training is True and self.data_augmentation is True:
             # MelSpectrogram.plot_mel_spectrogram(spectrogram[0])
