@@ -19,7 +19,8 @@ class EEGClassificationModel(pl.LightningModule):
                  eeg_sampling_rate: int,
                  eeg_num_channels: int,
                  eeg_samples: int,
-                 labels: List[str],
+                 labels: Union[str, List[str]],
+                 labels_classes: Union[int, List[int]],
                  eeg_windows_size: Union[int, float] = 0.2,
                  eeg_windows_stride: Union[int, float] = 0.1,
                  n_mels: int = 8,
@@ -66,10 +67,36 @@ class EEGClassificationModel(pl.LightningModule):
             center=True,
             normalized=True,
         ).float()
-        assert labels is not None and len(labels) > 1, labels
-        self.labels = labels
-        self.num_labels = len(self.labels)
+
+        # handles the labels classes to determine the type of task (multiclass or multilabel)
+        # labels classes are int if task is multiclass, list of int if task is multilabel
+        assert labels_classes is not None, labels_classes
+        if isinstance(labels_classes, int):
+            assert labels_classes > 1, labels_classes
+            self.task = "multiclass"
+        elif isinstance(labels_classes, list) and len(labels_classes) == 1:
+            labels_classes = labels_classes[0]
+            assert labels_classes > 1, labels_classes
+            self.task = "multiclass"
+        elif isinstance(labels_classes, list):
+            assert len(labels_classes) > 1, labels_classes
+            self.task = "multilabel"
+        self.labels_classes = labels_classes
+        # handles the names of the labels
+        # labels are str if task is multiclass, list of str if task is multilabel
+        assert labels is not None, labels
+        if self.task == "multiclass":
+            if isinstance(labels, str):
+                self.labels = labels
+            elif isinstance(labels, list):
+                assert len(labels) == 1
+                self.labels = labels[0]
+        elif self.task == "multilabel":
+            assert len(labels) == len(labels_classes)
+            self.labels = labels
+
         self.num_channels = eeg_num_channels
+        self.num_labels = len(self.labels) if self.task == "multilabel" else self.labels_classes
         with torch.no_grad():
             x = torch.randn([1, self.num_channels, self.eeg_samples])
             self.spectrogram_shape = self.mel_spectrogrammer(x).shape
@@ -77,7 +104,10 @@ class EEGClassificationModel(pl.LightningModule):
         # heads params
         assert isinstance(h_dim, int) and h_dim > 0, h_dim
         self.h_dim = h_dim
-        self.cls_head = nn.Linear(self.h_dim, self.num_labels)
+        if self.task == "multilabel":
+            self.cls_head = nn.Linear(self.h_dim, len(self.labels))
+        else:
+            self.cls_head = nn.Linear(self.h_dim, self.num_labels)
         assert isinstance(predict_ids, bool)
         self.predict_ids = predict_ids
         if self.predict_ids:
@@ -103,6 +133,7 @@ class EEGClassificationModel(pl.LightningModule):
     def step(self, batch, phase):
         # performs feature extraction
         batch["eegs"] = batch["eegs"].float().to(self.device)
+        assert batch["eegs"].shape[1:] == (self.num_channels, self.eeg_samples), f"got {batch['eegs'].shape[1:]}, expected {(self.num_channels, self.eeg_samples)}"
         assert not torch.isnan(batch["eegs"]).any(), f"batched eegs contains nans"
         # filters the data
         # batch["eegs"] = torchaudio.functional.lowpass_biquad(
@@ -122,61 +153,71 @@ class EEGClassificationModel(pl.LightningModule):
         # classification head
         # assert outs["features"].shape[-1] == self.h_dim, f"{outs['features'].shape} != {self.h_dim}"
         outs["cls_labels"] = batch["labels"].float().to(self.device)
+        if self.task == "multiclass":
+            outs["cls_labels"] = outs["cls_labels"].long()
+
         if "cls_logits" not in outs:
             assert "features" in outs, f"key 'features' not returned by the model. Current keys are {outs.keys()}"
             outs["cls_logits"] = self.cls_head(outs["features"])
+
+        cls_loss_fn = F.binary_cross_entropy_with_logits if self.task == "multilabel" else F.cross_entropy
         outs["metrics"].update(
             {
-                "cls_loss": F.binary_cross_entropy_with_logits(
+                "cls_loss": cls_loss_fn(
                     input=outs["cls_logits"], target=outs["cls_labels"]
                 ),
                 "cls_acc": torchmetrics.functional.accuracy(
                     preds=outs["cls_logits"],
                     target=outs["cls_labels"],
-                    task="multilabel" if self.num_labels > 1 else "binary",
+                    task=self.task,
                     num_labels=self.num_labels,
+                    num_classes=self.labels_classes,
                     average="micro",
                 ),
                 "cls_f1": torchmetrics.functional.f1_score(
                     preds=outs["cls_logits"],
                     target=outs["cls_labels"],
-                    task="multilabel" if self.num_labels > 1 else "binary",
+                    task=self.task,
                     num_labels=self.num_labels,
-                    average="micro",
-                ),
-                "cls_auc": torchmetrics.functional.auroc(
-                    preds=outs["cls_logits"],
-                    target=outs["cls_labels"].long(),
-                    task="multilabel" if self.num_labels > 1 else "binary",
-                    num_labels=self.num_labels,
+                    num_classes=self.labels_classes,
                     average="micro",
                 ),
             }
         )
-        # per-label metrics
-        for i_label, label in enumerate(self.labels):
-            outs["metrics"].update(
-                {
-                    f"cls_label={label}_acc": torchmetrics.functional.accuracy(
-                        preds=outs["cls_logits"][:, i_label],
-                        target=outs["cls_labels"][:, i_label],
-                        task="binary",
-                        average="micro",
-                    ),
-                    f"cls_label={label}_f1": torchmetrics.functional.f1_score(
-                        preds=outs["cls_logits"][:, i_label],
-                        target=outs["cls_labels"][:, i_label],
-                        task="binary",
-                        average="micro",
-                    ),
-                    f"cls_label={label}_auc": torchmetrics.functional.auroc(
-                        preds=outs["cls_logits"][:, i_label],
-                        target=outs["cls_labels"][:, i_label].long(),
-                        task="binary",
-                        average="micro",
-                    ),
-                }
+        if self.task == "multilabel":
+            outs["metrics"]["cls_auc"] = torchmetrics.functional.auroc(
+                preds=outs["cls_logits"],
+                target=outs["cls_labels"].long(),
+                task=self.task,
+                num_labels=self.num_labels,
+                num_classes=self.labels_classes,
+                average="micro",
             )
+        # per-label metrics
+        if self.task == "multilabel":
+            for i_label, label in enumerate(self.labels):
+                outs["metrics"].update(
+                    {
+                        f"cls_label={label}_acc": torchmetrics.functional.accuracy(
+                            preds=outs["cls_logits"][:, i_label],
+                            target=outs["cls_labels"][:, i_label],
+                            task="binary",
+                            average="micro",
+                        ),
+                        f"cls_label={label}_f1": torchmetrics.functional.f1_score(
+                            preds=outs["cls_logits"][:, i_label],
+                            target=outs["cls_labels"][:, i_label],
+                            task="binary",
+                            average="micro",
+                        ),
+                        f"cls_label={label}_auc": torchmetrics.functional.auroc(
+                            preds=outs["cls_logits"][:, i_label],
+                            target=outs["cls_labels"][:, i_label].long(),
+                            task="binary",
+                            average="micro",
+                        ),
+                    }
+                )
 
         if self.predict_ids:
             # ids head

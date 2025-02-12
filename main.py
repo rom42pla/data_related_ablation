@@ -71,7 +71,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError(f"unknown dataset {args['dataset']}")
     if args["dataset"] in {"high_gamma", "hg"} and (args["windows_size"] != 4 or args["windows_stride"] != 4):
-        print("WARNING: high_gamma dataset is compatible only with windows_size of 4. It has now been set to 4")
+        logger.warning("WARNING: high_gamma dataset is compatible only with windows_size of 4. It has now been set to 4")
         args["windows_size"], args["windows_stride"] = 4, 4
     dataset: EEGClassificationDataset = dataset_class(
         path=args['dataset_path'],
@@ -123,6 +123,7 @@ if __name__ == '__main__':
         eeg_num_channels=len(dataset.electrodes),
         eeg_samples=dataset[0]["eegs"].shape[-1],
         labels=dataset.labels,
+        labels_classes=dataset.labels_classes,
         min_freq=args["min_freq"],
         max_freq=args["max_freq"],
         predict_ids=args["predict_ids"],

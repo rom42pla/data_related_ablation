@@ -20,7 +20,7 @@ class HighGammaDataset(EEGClassificationDataset):
     def __init__(self, path: str, split="train", **kwargs):
         assert split in ["train", "test"], f"got {split}"
         self.split = split
-        
+
         super(HighGammaDataset, self).__init__(
             name="High Gamma",
             path=path,
@@ -35,32 +35,33 @@ class HighGammaDataset(EEGClassificationDataset):
 
     def load_data(self) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
         global parse_eegs
-        
+
         def parse_eegs(subject_id: str) -> Tuple[List[np.ndarray], List[np.ndarray], str]:
             eegs_raw = mne.io.read_raw_edf(
                 input_fname=join(self.path, self.split, f"{subject_id}.edf"),
                 include=self.electrodes + self.eog_electrodes,
                 preload=True,
                 verbose=False,
-            )
+            ) # c t
+            # eventually remove artifacts
             if self.remove_artifacts:
                 eegs_raw = self.artifact_removal_inplace(eegs_raw)
             # eventually filters data
             eegs_raw = self.bands_filter_inplace(eegs_raw)
-            eegs_events, event_dict = mne.events_from_annotations(eegs_raw, event_id='auto', verbose=False)
-            eegs_epochs = mne.Epochs(raw=eegs_raw, events=eegs_events, event_id=event_dict, baseline=(0,0), verbose=False, tmin=0, tmax=4, picks=self.electrodes)
-            
-            eegs = eegs_epochs.get_data(verbose=False)
+            # eventually normalize eegs
             if self.normalize_eegs:
-                eegs = einops.rearrange(eegs, "b c s-> b s c")
-                eegs = self.normalize(eegs)
-                eegs = einops.rearrange(eegs, "b s c -> b c s")
-            labels = eegs_events[:, 2] - 1
-            eegs = einops.rearrange(
-                eegs, "v c t -> v t c")[:, :self.sampling_rate * 4]
+                eegs_raw = self.normalize(eegs_raw, use_scaler=False)
+                assert eegs_raw.get_data().min() >= -1.0
+                assert eegs_raw.get_data().max() <= 1.0
+            assert not self.has_nans(eegs_raw.get_data()), "nans in eegs"
+            # print(eegs_raw.get_data().amin(), eegs_raw.get_data().amax(dim=[]))
+            eegs_events, event_dict = mne.events_from_annotations(eegs_raw, event_id='auto', verbose=False)
+            eegs = mne.Epochs(raw=eegs_raw, events=eegs_events, event_id=event_dict, baseline=(0,0), verbose=False, tmin=0, tmax=4, picks=self.electrodes).get_data(verbose=False)[:, :, :self.sampling_rate * 4] # b c t
+            eegs = einops.rearrange(eegs, "b c t -> b t c") # b t c
             assert list(eegs.shape)[1:] == [self.sampling_rate * 4, len(
                 self.electrodes)], f"{eegs.shape[1:]} != {[self.sampling_rate * 4, len(self.electrodes)]}"
             # labels
+            labels = eegs_events[:, 2] - 1
             assert list(labels.shape) == [eegs.shape[0]]
             # converts to lists
             eegs, labels = [x for x in eegs], [x for x in labels]
@@ -77,30 +78,60 @@ class HighGammaDataset(EEGClassificationDataset):
             subject_ids: List[str] = [s_id for eegs_lists, _, subject_id in data_pool
                                       for s_id in [subject_id] * len(eegs_lists)]
         assert len(eegs) == len(labels) == len(subject_ids)
+        # eegs_adapted, labels_adapted, subject_ids_adapted = [], [], []
+        # for eegs_agg, label, subject_id in zip(eegs, labels, subject_ids):
+        #     assert eegs_agg.shape == (self.sampling_rate * 4, len(self.electrodes)), eegs_agg.shape
+        #     eegs_adapted.append(eegs_agg)
+        #     labels_adapted.append(label)
+        #     subject_ids_adapted.append(subject_id)
+        # return eegs_adapted, labels_adapted, subject_ids_adapted
         return eegs, labels, subject_ids
+
+    def normalize(self, eegs: mne.io.Raw, use_scaler: bool = True) -> mne.io.Raw:
+        if use_scaler:
+            scaler = mne.decoding.Scaler(
+                info=eegs.info,
+                scalings="mean",
+            )
+            eegs._data = einops.rearrange(scaler.fit_transform(einops.rearrange(eegs._data, "c t -> () c t")), "b c t -> (b c) t")
+        eegs._data = np.nan_to_num(eegs._data)
+        # normalizes between -1 and 1
+        eegs._data = (
+            2
+            * (
+                (eegs._data - eegs._data.min(axis=1, keepdims=True))
+                / (
+                    eegs._data.max(axis=1, keepdims=True)
+                    - eegs._data.min(axis=1, keepdims=True)
+                )
+            )
+            - 1
+        )
+        return eegs
 
     def get_windows(self) -> List[Dict[str, Union[int, str]]]:
         windows: List[Dict[str, Union[int, str]]] = []
-        for i_window in range(len(self.eegs_data)):
+        # compared to DEAP, every High Gamma sample is a window with its own label
+        for i_window in range(len(self.eegs_data)): # (b s c)
             window = {
-                "experiment": 0,
-                "start": i_window,
-                "end": i_window,
+                "experiment": i_window,
+                "start": 0,
+                "end": self.eegs_data[i_window].shape[0],
                 "subject_id": self.subject_ids_data[i_window],
                 "labels": np.asarray(self.labels_data[i_window]),
             }
             windows += [window]
         return windows
 
-    def __getitem__(self, i: int) -> Dict[str, Union[int, str, np.ndarray]]:
-        window = self.windows[i]
-        eegs = self.eegs_data[window["start"]]
-        return {
-            "sampling_rates": self.sampling_rate,
-            "subject_id": window["subject_id"],
-            "eegs": torch.from_numpy(eegs),
-            "labels": torch.from_numpy(window["labels"])
-        }
+    # def __getitem__(self, i: int) -> Dict[str, Union[int, str, np.ndarray]]:
+    #     window = self.windows[i]
+    #     eegs = self.eegs_data[window["start"]]
+    #     return {
+    #         "sampling_rates": self.sampling_rate,
+    #         "subject_id": window["subject_id"],
+    #         "eegs": torch.from_numpy(eegs),
+    #         "labels": torch.from_numpy(window["labels"])
+    #     }
 
     @staticmethod
     def get_subject_ids_static(path: str) -> List[str]:
