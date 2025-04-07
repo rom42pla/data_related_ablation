@@ -171,7 +171,11 @@ class EEGClassificationModel(pl.LightningModule):
                     target=outs["cls_labels"],
                     task=self.task,
                     num_labels=self.num_labels,
-                    num_classes=self.labels_classes,
+                    num_classes=(
+                        self.labels_classes
+                        if isinstance(self.labels_classes, int)
+                        else len(self.labels_classes)
+                    ),
                     average="micro",
                 ),
                 "cls_f1": torchmetrics.functional.f1_score(
@@ -179,7 +183,11 @@ class EEGClassificationModel(pl.LightningModule):
                     target=outs["cls_labels"],
                     task=self.task,
                     num_labels=self.num_labels,
-                    num_classes=self.labels_classes,
+                    num_classes=(
+                        self.labels_classes
+                        if isinstance(self.labels_classes, int)
+                        else len(self.labels_classes)
+                    ),
                     average="micro",
                 ),
             }
