@@ -469,7 +469,8 @@ class SATEER(EEGClassificationModel):
             features = x_encoded[:, 0, :]
         else:
             features = torch.mean(x_encoded, dim=1)
-        outs["cls_logits"] = self.cls_head(features)
-        if self.predict_ids:
-            outs["ids_logits"] = self.ids_head(features)
+        outs["features"] = features
+        # outs["cls_logits"] = self.cls_head(features)
+        # if self.predict_ids:
+        #     outs["ids_logits"] = self.ids_head(features)
         return outs

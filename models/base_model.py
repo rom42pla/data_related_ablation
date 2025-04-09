@@ -97,6 +97,9 @@ class EEGClassificationModel(pl.LightningModule):
 
         self.num_channels = eeg_num_channels
         self.num_labels = len(self.labels) if self.task == "multilabel" else self.labels_classes
+        assert isinstance(self.num_labels, int), f"got {self.num_labels}"
+        self.num_classes = self.labels_classes
+        assert isinstance(self.num_classes, int), f"got {self.num_classes}"
         with torch.no_grad():
             x = torch.randn([1, self.num_channels, self.eeg_samples])
             self.spectrogram_shape = self.mel_spectrogrammer(x).shape
@@ -158,6 +161,7 @@ class EEGClassificationModel(pl.LightningModule):
 
         if "cls_logits" not in outs:
             assert "features" in outs, f"key 'features' not returned by the model. Current keys are {outs.keys()}"
+            assert outs["features"].shape[-1] == self.h_dim, f"expected features of shape {[outs['features'], self.h_dim]}, got {outs["features"].shape}"
             outs["cls_logits"] = self.cls_head(outs["features"])
 
         cls_loss_fn = F.binary_cross_entropy_with_logits if self.task == "multilabel" else F.cross_entropy
@@ -171,11 +175,7 @@ class EEGClassificationModel(pl.LightningModule):
                     target=outs["cls_labels"],
                     task=self.task,
                     num_labels=self.num_labels,
-                    num_classes=(
-                        self.labels_classes
-                        if isinstance(self.labels_classes, int)
-                        else len(self.labels_classes)
-                    ),
+                    num_classes=self.num_classes,
                     average="micro",
                 ),
                 "cls_f1": torchmetrics.functional.f1_score(
@@ -183,11 +183,7 @@ class EEGClassificationModel(pl.LightningModule):
                     target=outs["cls_labels"],
                     task=self.task,
                     num_labels=self.num_labels,
-                    num_classes=(
-                        self.labels_classes
-                        if isinstance(self.labels_classes, int)
-                        else len(self.labels_classes)
-                    ),
+                    num_classes=self.num_classes,
                     average="micro",
                 ),
             }
@@ -198,7 +194,7 @@ class EEGClassificationModel(pl.LightningModule):
                 target=outs["cls_labels"].long(),
                 task=self.task,
                 num_labels=self.num_labels,
-                num_classes=self.labels_classes,
+                num_classes=self.num_classes,
                 average="micro",
             )
         # per-label metrics
